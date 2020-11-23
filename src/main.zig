@@ -1,6 +1,7 @@
 const std = @import("std");
 // const IokeIO = @import("lang/IokeIO.zig").IokeIO;
 const Message = @import("./lang/Message.zig");
+const Readline = @import("./lang/extensions/readline/Readline.zig").Readline;
 const Runtime = @import("./lang/Runtime.zig").Runtime;
 const Utf8View = std.unicode.Utf8View;
 const Allocator = std.mem.Allocator;
@@ -21,8 +22,10 @@ pub fn main() void {
     };
 
     runtime.init();
-
+    var readline = Readline{.allocator = allocator};
+    readline.readline();
     var res = runtime.parseStream(iterator);
+
     // _ = Message.newFromStream(&runtime, iterator);
 
     std.log.info("All your codebase are belong to us.\n{}\n", .{res});
