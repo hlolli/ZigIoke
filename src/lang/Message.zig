@@ -3,6 +3,7 @@ const Allocator = std.mem.Allocator;
 const IokeDataTag = @import("./IokeData.zig").IokeDataTag;
 const IokeDataType = @import("./IokeData.zig").IokeDataType;
 const IokeData = @import("./IokeData.zig").IokeData;
+const IokeDataHelpers = @import("./IokeData.zig").IokeDataHelpers;
 const IokeObject = @import("./IokeObject.zig").IokeObject;
 const IokeParser = @import("./parser/IokeParser.zig").IokeParser;
 const Runtime = @import("./Runtime.zig").Runtime;
@@ -17,8 +18,6 @@ const ArrayList = std.ArrayList;
 // }
 
 
-const Argument = struct {};
-
 pub const Message = struct {
     const Self = @This();
 
@@ -27,11 +26,14 @@ pub const Message = struct {
     line: ?u32 = null,
     position: ?u32 = null,
     isTerminator: bool = false,
+    cached: ?*IokeObject = null,
     next: ?*IokeObject = null,
     prev: ?*IokeObject = null,
     name: []const u8,
     arguments: ArrayList(IokeObject) = undefined,
     runtime: *Runtime,
+
+    pub fn deinit(self: *Self) void { }
 
     pub fn getName(self: *Self) []const u8 {
         return self.name;
@@ -40,7 +42,7 @@ pub const Message = struct {
     pub fn getNameStatic(msg: *IokeObject) ?[]const u8 {
         var maybeData = msg.*.getData();
         var ret: ?[]const u8 = null;
-        if (maybeData != null and @as(IokeDataTag, maybeData.?.*) == IokeDataTag.Message) {
+        if (maybeData != null and IokeDataHelpers.isMessage(maybeData.?)) {
             ret = maybeData.?.Message.?.getName();
         }
         return ret;
@@ -144,30 +146,55 @@ pub const Message = struct {
         }
     }
 
-    pub fn newFromStreamStatic(runtime: *Runtime, iterator: StringIterator) IokeObject {
+    pub fn newFromStreamStatic(runtime: *Runtime, iterator: StringIterator, message: *IokeObject, context: *IokeObject) *IokeObject {
         var parser = IokeParser{
             .allocator = runtime.*.allocator,
+            .context = context,
+            .message = message,
             .runtime = runtime,
             .iterator = iterator,
         };
         parser.init();
-        defer parser.deinit();
 
         // _ = parser.parseFully() catch |err| {
         //     std.log.info("Parse error {}\n", .{err});
         // };
         var m = parser.parseFully();
+        std.log.info("\n nil-2.5 {*}\n", .{m.?.runtime});
         if (m == null) {
             var mx = Message{
                 .runtime = runtime,
                 .name = "."[0..],
                 .isTerminator = true,
             };
+            std.log.info("\n nil-3 {*}\n", .{mx.runtime});
             mx.setLine(0);
             mx.setPosition(0);
-            m = &(runtime.*.createMessage(&mx));
+            m = runtime.*.createMessage(&mx);
         }
-        return m.?.*;
+        std.log.info("\n nil-1 {*}\n", .{runtime});
+        std.log.info("\n nil-2 {*}\n", .{m.?.runtime});
+        std.log.info("\n nil-3 {*}\n", .{parser.runtime});
+        defer parser.deinit();
+        return m.?;
+    }
+
+    pub fn code(self: *Self) []const u8 {
+        var buf: [256]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        const writer = fbs.writer();
+
+        // currentCode(base);
+
+        if(self.next != null) {
+            if(!self.isTerminator) {
+                std.fmt.format(writer, " " , .{} ) catch unreachable;
+            }
+            std.fmt.format(writer, "{}" , .{self.next.?.code()} ) catch unreachable;
+            // base.append(Message.code(next));
+        }
+
+        return fbs.getWritten();
     }
 };
 

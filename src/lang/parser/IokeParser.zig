@@ -12,20 +12,22 @@ const OperatorsNS = @import("./Operators.zig");
 // const OpArity = OperatorsNS.OpArity;
 const OpUnion = OperatorsNS.OpUnion;
 const Operators = OperatorsNS.Operators;
-const IokeObject = @import("@ioke/ioke_object").IokeObject;
-const Message = @import("@ioke/message").Message;
-const Runtime = @import("@ioke/runtime").Runtime;
+const IokeObject = @import("../IokeObject.zig").IokeObject;
+const Message = @import("../Message.zig").Message;
+const Runtime = @import("../Runtime.zig").Runtime;
 
 pub const IokeParser = struct {
     allocator: *Allocator,
     iterator: StringIterator,
+    context: *IokeObject,
     currentCharacter: u32 = 0,
     lineNumber: u32 = 1,
+    message: *IokeObject,
     runtime: *Runtime,
     saved: i64 = -2,
     saved2: i64 = -2,
     skipLF: bool = false,
-    top: ChainContext = ChainContext{},
+    top: ?*ChainContext = null,
     operatorTable: ?AutoHashMap([]const u8, OpUnion) = null,
     trinaryOperatorTable: ?AutoHashMap([]const u8, OpUnion) = null,
     invertedOperatorTable: ?AutoHashMap([]const u8, OpUnion) = null,
@@ -39,22 +41,28 @@ pub const IokeParser = struct {
     pub fn deinit(self: *Self) void {
         if (self.operatorTable != null) {
             self.operatorTable.?.deinit();
+            self.operatorTable = null;
         }
         if (self.trinaryOperatorTable != null) {
             self.trinaryOperatorTable.?.deinit();
+            self.trinaryOperatorTable = null;
         }
         if (self.invertedOperatorTable != null) {
             self.invertedOperatorTable.?.deinit();
+            self.invertedOperatorTable = null;
         }
         if (self.unaryOperators != null) {
             self.unaryOperators.?.deinit();
+            self.unaryOperators = null;
         }
         if (self.onlyUnaryOperators != null) {
             self.onlyUnaryOperators.?.deinit();
+            self.onlyUnaryOperators = null;
         }
     }
 
     pub fn init(self: *Self) void {
+
         self.operatorTable = AutoHashMap([]const u8, OpUnion).init(self.allocator);
         self.trinaryOperatorTable = AutoHashMap([]const u8, OpUnion).init(self.allocator);
         self.invertedOperatorTable = AutoHashMap([]const u8, OpUnion).init(self.allocator);
@@ -67,7 +75,6 @@ pub const IokeParser = struct {
 
 
     fn read(self: *Self) i64 {
-        std.log.info("read! {} \n", .{self.saved});
         if (self.saved > -2) {
             var tmp = self.saved;
             self.saved = self.saved2;
@@ -178,7 +185,6 @@ pub const IokeParser = struct {
         var rr: i64 = self.peek();
         var currentIsWhiteSpace: bool = self.isWhiteSpace(rr);
         while (currentIsWhiteSpace) {
-            std.log.err("\n WS? \n", .{});
             _ = self.read();
             rr = self.peek();
             currentIsWhiteSpace = self.isWhiteSpace(rr);
@@ -265,7 +271,6 @@ pub const IokeParser = struct {
     }
 
     fn peek(self: *Self) i64 {
-        std.log.info("peek! \n", .{});
         if (self.saved == -2) {
             if (self.saved2 != -2) {
                 self.saved = self.saved2;
@@ -280,7 +285,6 @@ pub const IokeParser = struct {
                 self.saved = tmp;
             }
         }
-        std.log.info("peek {} \n", .{self.saved});
         return self.saved;
         // var rr =
         //     if (rr == null) {
@@ -325,23 +329,22 @@ pub const IokeParser = struct {
     }
 
     pub fn parseFully(self: *Self) ?*IokeObject {
-        var res = self.parseMessageChain();
-        return res;
+        return self.parseMessageChain();
     }
 
     fn parseMessageChain(self: *Self) ?*IokeObject {
-        self.top = ChainContext{
-            .parent = &self.top,
-        };
-        while(self.parseMessage()) { }
+        var newTop: ChainContext =
+            if (self.top == null)  ChainContext{} else
+            ChainContext{ .parent = self.top, };
+        self.top = &newTop;
+        while(self.parseMessage()) {}
 
-        self.top.popOperatorsTo(999999);
-        var ret: ?*IokeObject = self.top.pop();
-        if (self.top.parent != null) {
-            self.top = self.top.parent.?.*;
+        newTop.popOperatorsTo(999999);
+        var retPtr: ?*IokeObject = newTop.pop();
+        if (self.top.?.*.parent != null) {
+            self.top = self.top.?.*.parent;
         }
-
-        return ret;
+        return retPtr;
     }
 
     pub fn charDesc(self: *Self, c: i64) []u8 {
@@ -414,16 +417,16 @@ pub const IokeParser = struct {
                     };
                     m.setLine(l);
                     m.setPosition(cc);
-                    var mx: IokeObject = self.runtime.*.createMessage(&m);
+                    var mx: *IokeObject = self.runtime.*.createMessage(&m);
 
                     if(rr == '(') {
                         _ = self.read();
                         var args = self.parseCommaSeparatedMessageChains();
                         self.parseCharacter(')');
-                        Message.setArgumentsStatic(&mx, &args);
-                        self.top.add(&mx);
+                        Message.setArgumentsStatic(mx, args);
+                        self.top.?.*.add(mx);
                     } else {
-                        self.possibleOperator(&mx);
+                        self.possibleOperator(mx);
                     }
                     return;
                 }
@@ -435,9 +438,8 @@ pub const IokeParser = struct {
         std.log.err("file TODO:{}:{}:{}", .{line, char, msg});
     }
 
-    fn parseCommaSeparatedMessageChains(self: *Self) ArrayList(IokeObject) {
+    fn parseCommaSeparatedMessageChains(self: *Self) *ArrayList(IokeObject) {
         var chain: ArrayList(IokeObject) = ArrayList(IokeObject).init(self.allocator);
-        defer chain.deinit();
         // return chain;
 
         var curr: ?*IokeObject = self.parseMessageChain();
@@ -463,14 +465,14 @@ pub const IokeParser = struct {
                 curr = null;
             }
         }
-        return chain;
+        return &chain;
     }
 
 
     fn isUnary(self: *Self, name: []const u8) bool {
         if (self.unaryOperators.?.contains(name) and
-                (self.top.head == null or
-                     self.top.last != null and Message.isTerminatorStatic(self.top.last.?))) {
+                (self.top.?.*.head == null or
+                     self.top.?.*.last != null and Message.isTerminatorStatic(self.top.?.*.last.?))) {
             return true;
         } else {
             return false;
@@ -520,8 +522,8 @@ pub const IokeParser = struct {
         }
 
         if(self.isUnary(name) or self.onlyUnaryOperators.?.contains(name)) {
-            self.top.add(mx);
-            self.top.push(-1, mx, Level.Type.UNARY);
+            self.top.?.*.add(mx);
+            self.top.?.*.push(-1, mx, Level.Type.UNARY);
             return;
         }
 
@@ -540,9 +542,9 @@ pub const IokeParser = struct {
         };
         m.setLine(l);
         m.setPosition(cc);
-        var mx: IokeObject = self.runtime.*.createMessage(&m);
-        Message.setArgumentsStatic(&mx, &args);
-        self.top.add(&mx);
+        var mx: *IokeObject = self.runtime.*.createMessage(&m);
+        Message.setArgumentsStatic(mx, args);
+        self.top.?.*.add(mx);
     }
 
     fn parseOpenCloseMessageSend(self: *Self, end: i64, name: []const u8) void {
@@ -559,20 +561,20 @@ pub const IokeParser = struct {
         m.setLine(l);
         m.setPosition(cc);
 
-        var mx: IokeObject = self.runtime.*.createMessage(&m);
+        var mx: *IokeObject = self.runtime.*.createMessage(&m);
 
         if(rr == end and r2 == '(') {
             _ = self.read();
             _ = self.read();
-            var args: ArrayList(IokeObject) = self.parseCommaSeparatedMessageChains();
+            var args = self.parseCommaSeparatedMessageChains();
             self.parseCharacter(')');
-            Message.setArgumentsStatic(&mx, &args);
+            Message.setArgumentsStatic(mx, args);
         } else {
-            var args: ArrayList(IokeObject) = self.parseCommaSeparatedMessageChains();
+            var args = self.parseCommaSeparatedMessageChains();
             self.parseCharacter(end);
-            Message.setArgumentsStatic(&mx, &args);
+            Message.setArgumentsStatic(mx, args);
         }
-        self.top.add(&mx);
+        self.top.?.*.add(mx);
     }
 
     pub fn parseRegularMessageSend(self: *Self, indicator: i64) void {
@@ -614,17 +616,16 @@ pub const IokeParser = struct {
         m.setLine(l);
         m.setPosition(cc);
 
-        var mx: IokeObject = self.runtime.*.createMessage(&m);
-
+        var mx: *IokeObject = self.runtime.*.createMessage(&m);
         if(rr == '(') {
             _ = self.read();
-            var args: ArrayList(IokeObject) = self.parseCommaSeparatedMessageChains();
+            var args = self.parseCommaSeparatedMessageChains();
             self.parseCharacter(')');
-            Message.setArgumentsStatic(&mx, &args);
-            self.top.add(&mx);
+            Message.setArgumentsStatic(mx, args);
+            self.top.?.*.add(mx);
         } else {
             // FINISH
-            self.possibleOperator(&mx);
+            self.possibleOperator(mx);
         }
     }
 

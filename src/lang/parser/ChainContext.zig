@@ -1,8 +1,8 @@
 const std = @import("std");
-const Message = @import("@ioke/message").Message;
-const IokeObject = @import("@ioke/ioke_object").IokeObject;
 const BufferedChain = @import("./BufferedChain.zig").BufferedChain;
 const Level = @import("./Level.zig").Level;
+const Message = @import("../Message.zig").Message;
+const IokeObject = @import("../IokeObject.zig").IokeObject;
 
 pub const ChainContext = struct {
     const Self = @This();
@@ -44,7 +44,7 @@ pub const ChainContext = struct {
             .type = levelType,
             .precedence = precedence,
             .parent = &self.currentLevel,
-            .operatorMessage = op.*,
+            .operatorMessage = op,
         };
         self.chains = BufferedChain{
             .parent = &self.chains,
@@ -56,21 +56,25 @@ pub const ChainContext = struct {
     }
 
     pub fn pop(self: *Self) ?*IokeObject {
-        if(self.head != null) {
-            while(
-                Message.isTerminatorStatic(self.head.?) and
-                    Message.getNextStatic(self.head.?) != null
-            ) {
-                // std.log.err("POP! \n", .{});
-                self.head = Message.getNextStatic(self.head.?);
-                Message.setPrevStatic(self.head.?, self.head.?);
-                if (self.head == null) {
-                    break;
-                }
+        while(
+            self.head != null and
+                Message.getNextStatic(self.head.?) != null and
+                Message.isTerminatorStatic(self.head.?)
+
+        ) {
+            self.head = Message.getNextStatic(self.head.?);
+            Message.setPrevStatic(self.head.?, self.head.?);
+            if (self.head == null) {
+                break;
             }
         }
 
+
         var headToReturn = self.head;
+        if (headToReturn != null) {
+            std.log.info("\n head-1 {*}\n", .{headToReturn.?});
+            std.log.info("\n head-2 {*}\n", .{self.head.?});
+        }
         self.head = if (self.chains.head != null) self.chains.head.? else null;
         self.last = if (self.chains.last != null) self.chains.last.? else null;
         if (self.chains.parent != null) {
@@ -90,10 +94,10 @@ pub const ChainContext = struct {
             if (arg != null and isTerminator and nextMsg == null) {
                 arg = null;
             }
-            var op: ?IokeObject = self.currentLevel.operatorMessage;
+            var op: ?*IokeObject = self.currentLevel.operatorMessage;
 
-            if (op != null and self.currentLevel.type == Level.Type.INVERTED and Message.prevStatic(&op.?) != null) {
-                var prev = Message.prevStatic(&op.?);
+            if (op != null and self.currentLevel.type == Level.Type.INVERTED and Message.prevStatic(op.?) != null) {
+                var prev = Message.prevStatic(op.?);
                 if (prev != null) {
                     Message.setNextStatic(prev.?, null);
                 }

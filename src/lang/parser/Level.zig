@@ -13,15 +13,6 @@ pub const Level = struct {
 
     precedence: i32 = -1,
     type: Level.Type,
-    operatorMessage: ?IokeObject = null,
+    operatorMessage: ?*IokeObject = null,
     parent: ?*Level = null,
-
-
-    pub fn toString(self: *Self) []uint8 {
-        return "Level<" +
-            self.precedence ++ ", " ++
-            self.operatorMessage ++ ", " ++
-            self.type ++ ", " ++
-            self.parent ++ ">";
-    }
 };

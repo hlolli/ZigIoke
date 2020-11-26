@@ -2,26 +2,20 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const AutoHashMap = std.AutoHashMap;
 const ArrayList = std.ArrayList;
+const Cell = @import("./Cell.zig").Cell;
 const IokeData = @import("./IokeData.zig").IokeData;
 const IokeObject = @import("./IokeObject.zig").IokeObject;
 const String = @import("./String.zig").String;
 
 const INITIAL_CELL_SIZE: u8 = 4;
 
-// Cell(String name, int hash)
-pub const Cell = struct {
-    name: []const u8,
-    value: ?*IokeData = null,
-    next: ?*Cell = null, // next in hash table bucket
-    orderedNext: ?*Cell = null, // next in linked list
-};
-
 pub const Body = struct {
     const Self = @This();
+    deinitialized: bool = false,
     allocator: *Allocator,
     documentation: ?[]i8 = null,
     mimic: ?*IokeObject = null,
-    mimics: ?ArrayList(IokeObject) = null,
+    mimics: ?*ArrayList(IokeObject) = null,
     mimicCount: u32 = 0,
     flags: u8 = 0,
     cells: ?AutoHashMap([]const u8, Cell) = null,
@@ -30,12 +24,19 @@ pub const Body = struct {
     lastAdded: ?*Cell = null,
 
     pub fn deinit(self: *Self) void {
-        if (self.cells != null) {
-            self.cells.?.deinit();
-        }
+        if (!self.deinitialized) {
+            self.deinitialized = true;
+            if (self.cells != null) {
+                self.cells.?.deinit();
+                self.cells = null;
+            }
 
-        if (self.mimics != null) {
-            self.mimics.?.deinit();
+            // if (self.mimicCount > 0 and self.mimics != null) {
+            //     std.log.info("\nHOW!. {}\n", .{self.mimicCount});
+            //     self.mimics.?.deinit();
+            //     std.log.info("\nHOW!2.\n", .{});
+            //     self.mimics = null;
+            // }
         }
     }
 
@@ -47,7 +48,7 @@ pub const Body = struct {
         }
     }
 
-    fn getCell(self: *Self, name: []const u8, query: bool) ?Cell {
+    fn getCell(self: *Self, name: []const u8, query: bool) ?*Cell {
         // Cell[] cellsLocalRef = cells;
         if(self.cells == null and query == true) {
             return null;
@@ -72,7 +73,7 @@ pub const Body = struct {
                 //     return null;
                 // }
         } else {
-            return self.createCell(name);
+            return &self.createCell(name);
         }
     }
 
@@ -80,12 +81,21 @@ pub const Body = struct {
     //     return hash & (tableSize - 1);
     // }
 
-    fn createCell(self: *Self, name: []const u8) Cell {
-        var cellsLocalRef = self.cells;
+    pub fn get(self: *Self, name: []const u8) ?*IokeData {
+        var cell = self.getCell(name, true);
+        if (cell == null) {
+            return null;
+        } else {
+            return cell.?.value;
+        }
+    }
+
+    fn createCell(self: *Self, name: []const u8) *Cell {
+        // var cellsLocalRef = self.cells;
 
         if (self.count == 0) {
-            cellsLocalRef = AutoHashMap([]const u8, Cell).init(self.allocator);
-            self.cells = cellsLocalRef;
+            self.cells = AutoHashMap([]const u8, Cell).init(self.allocator);
+            // self.cells = cellsLocalRef;
         }
 
         // else {
@@ -111,12 +121,13 @@ pub const Body = struct {
         //     }
         // }
 
-        var newCell = Cell{.name = name};
+        var newCell: Cell = Cell{.name = name};
 
         self.count += 1;
 
         if(self.lastAdded != null) {
-            self.lastAdded.?.orderedNext = &newCell;
+            // TODO segfault fix
+            // self.lastAdded.?.*.orderedNext = &newCell;
         }
 
         if(self.firstAdded == null) {
@@ -126,6 +137,6 @@ pub const Body = struct {
         self.lastAdded = &newCell;
 
         // addKnownAbsentCell(cellsLocalRef, newCell, insertPos);
-        return newCell;
+        return &newCell;
     }
 };
