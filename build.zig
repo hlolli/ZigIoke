@@ -15,11 +15,22 @@ pub fn build(b: *Builder) void {
     const mode = b.standardReleaseOptions();
 
     var exe = b.addExecutable("ioke", "src/main.zig");
-    exe.addIncludeDir("./include");
+    // exe.addIncludeDir("./include");
     exe.addPackagePath("@ioke/ioke_object", "src/lang/IokeObject.zig");
     exe.addPackagePath("@ioke/message", "src/lang/Message.zig");
     exe.addPackagePath("@ioke/runtime", "src/lang/Runtime.zig");
-    exe.linkSystemLibrary("c");
+    // exe.linkSystemLibrary("c");
+    // exe.linkSystemLibrary("readline");
+    // exe.linkSystemLibrary("history");
+    // exe.addCSourceFile("include/readline/readline.c", &[_][]const u8{
+    //     "-Wall",
+    //     "-Wextra",
+    //     "-Werror",
+    //     "-std=c99",
+    //     "-DREADLINE_LIBRARY=1",
+    //     "-include./include/readline/readline.h",
+    // });
+
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.install();

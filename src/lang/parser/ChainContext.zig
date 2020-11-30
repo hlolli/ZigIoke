@@ -2,6 +2,7 @@ const std = @import("std");
 const BufferedChain = @import("./BufferedChain.zig").BufferedChain;
 const Level = @import("./Level.zig").Level;
 const Message = @import("../Message.zig").Message;
+const IokeDataHelpers = @import("../IokeData.zig").IokeDataHelpers;
 const IokeObject = @import("../IokeObject.zig").IokeObject;
 
 pub const ChainContext = struct {
@@ -17,19 +18,13 @@ pub const ChainContext = struct {
     head: ?*IokeObject = null,
 
     pub fn add(self: *Self, msg: *IokeObject) void {
-        // std.log.err("EMMESSGJE {} \n", .{msg});
+
         if (self.head == null) {
             self.last = msg;
             self.head = msg;
         } else if (self.last != null) {
-            Message.setNextStatic(
-                self.last.?,
-                msg
-            );
-            Message.setPrevStatic(
-                msg,
-                self.last.?
-            );
+            self.last.?.data.?.Message.?.setNext(msg);
+            msg.data.?.Message.?.setNext(msg);
             self.last = msg;
         }
         if (self.currentLevel.type == Level.Type.UNARY) {
@@ -40,6 +35,7 @@ pub const ChainContext = struct {
     }
 
     pub fn push(self: *Self, precedence: i32, op: *IokeObject, levelType: Level.Type) void {
+        std.log.info("\n head-3 {*}\n", .{op.runtime});
         self.currentLevel = Level{
             .type = levelType,
             .precedence = precedence,
@@ -56,25 +52,22 @@ pub const ChainContext = struct {
     }
 
     pub fn pop(self: *Self) ?*IokeObject {
-        while(
-            self.head != null and
-                Message.getNextStatic(self.head.?) != null and
-                Message.isTerminatorStatic(self.head.?)
-
-        ) {
-            self.head = Message.getNextStatic(self.head.?);
-            Message.setPrevStatic(self.head.?, self.head.?);
-            if (self.head == null) {
-                break;
+        if (self.head != null and self.head.?.data != null) {
+            const headMessage = IokeDataHelpers.getMessage(self.head.?.data.?);
+            if (headMessage != null and headMessage.?.isTerminator and headMessage.?.next != null) {
+                headMessage.?.setPrev(self.head);
+                return self.pop();
             }
         }
 
+        const headToReturn = self.head;
 
-        var headToReturn = self.head;
         if (headToReturn != null) {
-            std.log.info("\n head-1 {*}\n", .{headToReturn.?});
-            std.log.info("\n head-2 {*}\n", .{self.head.?});
+            headToReturn.?.runtime.* = self.head.?.runtime.*;
+            std.log.info("\n head-1 {*}\n", .{headToReturn.?.runtime});
+            std.log.info("\n head-2 {*}\n", .{self.head.?.runtime});
         }
+
         self.head = if (self.chains.head != null) self.chains.head.? else null;
         self.last = if (self.chains.last != null) self.chains.last.? else null;
         if (self.chains.parent != null) {
@@ -84,42 +77,44 @@ pub const ChainContext = struct {
     }
 
     pub fn popOperatorsTo(self: *Self, precedence: i32) void {
-        while((self.currentLevel.precedence != -1
-                   or self.currentLevel.type == Level.Type.UNARY)
+        if((self.currentLevel.precedence != -1
+                or self.currentLevel.type == Level.Type.UNARY)
                   and self.currentLevel.precedence <= precedence) {
-            // std.log.err("popOOT \n", .{});
-            var arg = self.pop();
-            var isTerminator: bool = Message.isTerminatorStatic(arg.?);
-            var nextMsg = Message.getNextStatic(arg.?);
-            if (arg != null and isTerminator and nextMsg == null) {
-                arg = null;
+            const arg = self.pop();
+            if (arg == null or arg.?.data == null) {
+                std.log.err("ChainContext.popOperatorsTo failed\n", .{});
+                return;
             }
-            var op: ?*IokeObject = self.currentLevel.operatorMessage;
+            const currentMessage = IokeDataHelpers.getMessage(arg.?.data.?);
 
-            if (op != null and self.currentLevel.type == Level.Type.INVERTED and Message.prevStatic(op.?) != null) {
-                var prev = Message.prevStatic(op.?);
-                if (prev != null) {
-                    Message.setNextStatic(prev.?, null);
+            if (currentMessage == null) {
+                std.log.err("ChainContext.popOperatorsTo failed: empty data\n", .{});
+                return;
+            }
+
+            const isTerminator: bool = currentMessage.?.isTerminator;
+            const nextMsg = currentMessage.?.next;
+            const arg_ = if (arg != null and isTerminator and nextMsg == null) null else arg;
+
+            const op = self.currentLevel.operatorMessage;
+            const opMessage = if(op != null) IokeDataHelpers.getMessage(op.?.data.?) else null;
+
+            if (opMessage != null and self.currentLevel.type == Level.Type.INVERTED and opMessage.?.prev != null and opMessage.?.prev.?.data != null) {
+
+                var opMsgPrev = IokeDataHelpers.getMessage(opMessage.?.prev.?.data.?);
+                if (opMsgPrev == null) {
+                    std.log.err("ChainContext.popOperatorsTo failed: missing link\n", .{});
+                    return;
                 }
-
+                opMsgPrev.?.*.setNext(null);
+                if (self.head != null) {
+                    opMsgPrev.?.arguments.append(self.head.?.*) catch unreachable;
+                }
+                self.head = arg_;
             }
-            // IokeObject op = currentLevel.operatorMessage;
-            // if(currentLevel.type == Level.Type.INVERTED && Message.prev(op) != null) {
-            //     Message.setNext(Message.prev(op), null);
-            //     op.getArguments().add(head);
-            //     head = arg;
-            //     Message.setNextOfLast(head, op);
-            //     last = op;
-            // } else {
-            //     if(arg != null) {
-            //         op.getArguments().add(arg);
-            //     }
-            // }
-            // currentLevel = currentLevel.parent;
+            self.popOperatorsTo(precedence);
         }
     }
-    // std.math.maxInt(u32);
-
 };
 
 // Tests

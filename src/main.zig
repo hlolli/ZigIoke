@@ -5,13 +5,17 @@ const IokeObject = @import("./lang./IokeObject.zig").IokeObject;
 // const Readline = @import("./lang/extensions/readline/Readline.zig").Readline;
 const Runtime = @import("./lang/Runtime.zig").Runtime;
 const Interpreter = @import("./lang/Interpreter.zig").Interpreter;
+const IokeRegistry = @import("./lang/IokeRegistry.zig").IokeRegistry;
 const Utf8View = std.unicode.Utf8View;
 const Allocator = std.mem.Allocator;
-var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-
+var fixed_buffer_mem: [10 * 1024 * 1024]u8 = undefined;
 
 pub fn main() void {
-    var allocator = &arena.allocator;
+    // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    // var allocator = &arena.allocator;
+    var fixed_buf_alloc = std.heap.FixedBufferAllocator.init(fixed_buffer_mem[0..]);
+    var allocator = &fixed_buf_alloc.allocator;
+
     // var buf = "💯hello".*;
     var buf = "arg = '(bar quux)".*;
     var stringBuf = Utf8View.init(&buf) catch unreachable;
@@ -25,7 +29,7 @@ pub fn main() void {
     runtime.init();
 
     // root context
-    const context = &runtime.ground.?;
+    const context = runtime.ground.?;
 
     // root message
     var mx = Message{
@@ -44,5 +48,5 @@ pub fn main() void {
     // var readline = Readline{.allocator = allocator};
     // _ = readline.readline();
     defer runtime.deinit();
-    defer arena.deinit();
+    // defer fixed_buf_alloc.deinit();
 }
