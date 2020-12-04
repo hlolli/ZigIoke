@@ -40,7 +40,7 @@ pub const IokeDataTag = enum {
 };
 
 pub const IokeData = union(IokeDataTag) {
-    None: ?*IokeObject,
+    None: ?IokeDataTag,
     Nil: ?*IokeObject,
     False: ?*IokeObject,
     True: ?*IokeObject,
@@ -60,9 +60,6 @@ fn maybeObject(iokeData: *IokeData) ?*IokeObject {
     switch (iokeData.*) {
         IokeDataTag.IokeObject => {
             return iokeData.IokeObject.?;
-        },
-        IokeDataTag.None => {
-            return iokeData.None.?;
         },
         IokeDataTag.Nil => {
             return iokeData.Nil.?;
@@ -104,14 +101,24 @@ pub const IokeDataHelpers = struct {
     }
 
     pub fn isMessage(iokeData: *IokeData) bool {
-        return (@as(IokeDataTag, iokeData.*) == IokeDataTag.Message);
+        switch (iokeData.*) {
+            IokeDataTag.Message => {
+                return true;
+            },
+            else => {
+                return false;
+            }
+        }
     }
 
     pub fn getMessage(iokeData: *IokeData) ?*Message {
-        if (@as(IokeDataTag, iokeData.*) == IokeDataTag.Message) {
-            return iokeData.Message.?;
-        } else {
-            return null;
+        switch (iokeData.*) {
+            IokeDataTag.Message => {
+                return iokeData.Message.?;
+            },
+            else => {
+                return null;
+            }
         }
     }
 

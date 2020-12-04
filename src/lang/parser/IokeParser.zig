@@ -414,7 +414,7 @@ pub const IokeParser = struct {
                         _ = self.read();
                         var args = self.parseCommaSeparatedMessageChains();
                         self.parseCharacter(')');
-                        mx.data.?.Message.?.setArguments(args);
+                        mx.data.Message.?.setArguments(args);
                         self.top.?.*.add(mx);
                     } else {
                         self.possibleOperator(mx);
@@ -429,13 +429,13 @@ pub const IokeParser = struct {
         std.log.err("file TODO:{}:{}:{}", .{line, char, msg});
     }
 
-    fn parseCommaSeparatedMessageChains(self: *Self) *ArrayList(IokeObject) {
-        var chain: ArrayList(IokeObject) = ArrayList(IokeObject).init(self.allocator);
+    fn parseCommaSeparatedMessageChains(self: *Self) *ArrayList(*IokeObject) {
+        var chain: ArrayList(*IokeObject) = ArrayList(*IokeObject).init(self.allocator);
         // return chain;
 
         var curr: ?*IokeObject = parseMessageChain(self);
         while (curr != null) {
-            chain.append(curr.?.*) catch unreachable;
+            chain.append(curr.?) catch unreachable;
             self.readWhiteSpace();
             var rr: i64 = self.peek();
             if(rr == ',') {
@@ -450,7 +450,7 @@ pub const IokeParser = struct {
                     break;
                 }
             } else {
-                if(curr != null and curr.?.data.?.Message.?.isTerminator and curr.?.data.?.Message.?.next == null) {
+                if(curr != null and curr.?.data.Message.?.isTerminator and curr.?.data.Message.?.next == null) {
                     _ = chain.orderedRemove(chain.items.len - 1);
                 }
                 curr = null;
@@ -463,7 +463,7 @@ pub const IokeParser = struct {
     fn isUnary(self: *Self, name: []const u8) bool {
         if (self.unaryOperators.?.contains(name) and
                 (self.top.?.*.head == null or
-                     self.top.?.*.last != null and self.top.?.last.?.data.?.Message.?.isTerminator)) {
+                     self.top.?.*.last != null and self.top.?.last.?.data.Message.?.isTerminator)) {
             return true;
         } else {
             return false;
@@ -504,7 +504,7 @@ pub const IokeParser = struct {
     }
 
     fn possibleOperator(self: *Self, mx: *IokeObject) void {
-        var maybeName: ?[]const u8 = mx.data.?.Message.?.getName();
+        var maybeName: ?[]const u8 = mx.data.Message.?.getName();
         var name: []const u8 = "";
         if (maybeName != null) {
             name = maybeName.?;
@@ -534,7 +534,7 @@ pub const IokeParser = struct {
         m.setLine(l);
         m.setPosition(cc);
         var mx = self.runtime.createMessage(&m);
-        mx.data.?.Message.?.setArguments(args);
+        mx.data.Message.?.setArguments(args);
         self.top.?.*.add(mx);
     }
 
@@ -559,11 +559,11 @@ pub const IokeParser = struct {
             _ = self.read();
             var args = self.parseCommaSeparatedMessageChains();
             self.parseCharacter(')');
-            mx.data.?.Message.?.setArguments(args);
+            mx.data.Message.?.setArguments(args);
         } else {
             var args = self.parseCommaSeparatedMessageChains();
             self.parseCharacter(end);
-            mx.data.?.Message.?.setArguments(args);
+            mx.data.Message.?.setArguments(args);
         }
         self.top.?.*.add(mx);
     }
@@ -593,10 +593,9 @@ pub const IokeParser = struct {
         var m: Message = Message{
             .runtime = self.runtime,
             .name = fbs.getWritten(),
+            .line = l,
+            .position = cc,
         };
-
-        m.setLine(l);
-        m.setPosition(cc);
 
         var mx = self.runtime.createMessage(&m);
 
@@ -605,7 +604,7 @@ pub const IokeParser = struct {
             var args = self.parseCommaSeparatedMessageChains();
             self.parseCharacter(')');
             // mx.data should always be there after createMessage!
-            mx.data.?.Message.?.setArguments(args);
+            mx.data.Message.?.setArguments(args);
             self.top.?.*.add(mx);
         } else {
             // FINISH

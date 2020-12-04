@@ -17,12 +17,12 @@ pub const Interpreter = struct {
     // @static
     pub fn evaluate(self: *Self, message: ?*IokeObject, ctx: *IokeObject, receiver: *IokeObject, lastReal_: ?*IokeObject) *IokeObject {
 
-        var lastReal: *IokeObject = if (lastReal_ == null) ctx.runtime.getNil().? else lastReal_.?;
-        if (message == null or message.?.data == null or !IokeDataHelpers.isMessage(message.?.data.?)) {
+        var lastReal: *IokeObject = if (lastReal_ == null) ctx.runtime.getNil() else lastReal_.?;
+        if (message == null or !IokeDataHelpers.isMessage(message.?.data)) {
             return lastReal;
         }
 
-        var maybeCached = message.?.data.?.Message.?.cached;
+        var maybeCached = message.?.data.Message.?.cached;
 
         if (maybeCached != null) {
             var unwrapped = IokeDataHelpers.getObject(maybeCached.?);
@@ -32,18 +32,19 @@ pub const Interpreter = struct {
             } else {
                 return self.evaluate(message.?.next, unwrapped.?, unwrapped.?, unwrapped.?);
             }
-        } else if (String.equals(message.?.data.?.Message.?.name, "."[0..])) {
+        } else if (String.equals(message.?.data.Message.?.name, "."[0..])) {
             return self.evaluate(message.?.next, ctx, ctx, lastReal);
-        } else if (message.?.data.?.Message.?.name.len > 0 and
-                       message.?.data.?.Message.?.arguments.items.len == 0 and
-                       message.?.data.?.Message.?.name[0] == ':') {
-            var lastRealObj = message.?.runtime.getSymbol(message.?.data.?.Message.?.name[1..]);
+        } else if (message.?.data.Message.?.name.len > 0 and
+                       (message.?.data.Message.?.arguments == null or
+                            message.?.data.Message.?.arguments.?.items.len == 0) and
+                       message.?.data.Message.?.name[0] == ':') {
+            var lastRealObj = message.?.runtime.getSymbol(message.?.data.Message.?.name[1..]);
 
             return self.evaluate(message.?.next, ctx, lastRealObj, lastRealObj);
 
         } else {
 
-            var perf_ret_ = self.perform5(receiver, receiver, ctx, message.?, message.?.data.?.Message.?.name);
+            var perf_ret_ = self.perform5(receiver, receiver, ctx, message.?, message.?.data.Message.?.name);
             if (perf_ret_ == null) {
                 std.log.err("Something went wrong in evaluation.\n", .{});
                 return lastReal;
@@ -56,7 +57,7 @@ pub const Interpreter = struct {
 
     fn shouldActivate(self: *Self, obj: *IokeObject, message: *IokeObject) bool {
         return obj.isActivatable() or
-            ((obj.data != null and IokeDataHelpers.isAssociatedCode(obj.data.?)) and message.getArguments().?.items.len > 0);
+            ((IokeDataHelpers.isAssociatedCode(obj.data)) and message.getArguments().?.items.len > 0);
     }
 
     fn findCell(self: *Self, message: *IokeObject, ctx: *IokeObject, obj: *IokeObject, name: []const u8, recv: *IokeObject) ?*Cell {
@@ -69,7 +70,7 @@ pub const Interpreter = struct {
                 cell =  passed;
                 if(passed != null and
                        passed.?.value != null and
-                       passed.?.value.? != runtime.nul.?.data.? and
+                       passed.?.value.? != runtime.nul.?.data and
                        self.isApplicable(passed.?.value.?, message, ctx)) {
                     return cell;
                 }
@@ -81,16 +82,16 @@ pub const Interpreter = struct {
     }
 
     pub fn send0(self: *Self, message: *IokeObject, context: *IokeObject, recv: *IokeData) ?*IokeObject {
-        if (message.data != null and IokeDataHelpers.isMessage(message.data.?) and message.data.?.Message.cached != null) {
-            return message.data.?.Message.cached.?;
+        if (message.data != null and IokeDataHelpers.isMessage(message.data) and message.data.Message.cached != null) {
+            return message.data.Message.cached.?;
         } else {
             return self.perform4(recv, context, message);
         }
     }
 
     pub fn send1(self: *Self, message: *IokeObject, context: *IokeObject, recv: *IokeData, argument: *IokeData) ?*IokeObject {
-        if (message.data != null and IokeDataHelpers.isMessage(message.data.?) and message.data.?.Message.?.cached != null and message.data.?.Message.?.cached.?.IokeObject != null) {
-            return message.data.?.Message.?.cached.?.IokeObject.?;
+        if (IokeDataHelpers.isMessage(message.data) and message.data.Message.?.cached != null and message.data.Message.?.cached.?.IokeObject != null) {
+            return message.data.Message.?.cached.?.IokeObject.?;
         } else {
             var m = message.allocateCopy(message, context);
             m.singleMimicsWithoutCheck(context.runtime.message.?);
@@ -109,13 +110,15 @@ pub const Interpreter = struct {
             }
         }
         var m = obj.?.data;
-        if (m != null and IokeDataHelpers.isMessage(m.?)) {
-            var current_args = IokeDataHelpers.getArguments(m.?).?;
-            for (current_args) |arg_obj| {
-                arg_obj.deinit();
+        if (IokeDataHelpers.isMessage(m)) {
+            var current_args = IokeDataHelpers.getArguments(m.?);
+            if (current_args != null) {
+                for (current_args.?) |arg_obj| {
+                    arg_obj.deinit();
+                }
+                current_args.?.deinit();
+                current_args = &args;
             }
-            current_args.deinit();
-            current_args = &args;
         }
         return self.perform4(cell, obj, recv, context, m);
     }
@@ -123,7 +126,7 @@ pub const Interpreter = struct {
     // since there's no wrap, refer to c#'s implementation for reference
     pub fn perform4(self: *Self, obj: *IokeData, ctx: *IokeObject, message: *IokeObject) ?*IokeObject {
         var recv = IokeDataHelpers.as(obj, ctx);
-        var msg = if (message.data != null) IokeDataHelpers.getMessage(message.data.?) else null;
+        var msg = IokeDataHelpers.getMessage(message.data);
         var name = if (msg != null) msg.?.name else ""[0..];
         return self.perform5(recv.?, recv.?, ctx, message, name);
     }
@@ -138,13 +141,13 @@ pub const Interpreter = struct {
     }
 
     fn isApplicable(self: *Self, pass: *IokeData, message: *IokeObject, ctx: *IokeObject) bool {
-        if(pass != ctx.runtime.nul.?.data.?) {
+        if(pass != ctx.runtime.nul.?.data) {
             var recv = IokeDataHelpers.as(pass, ctx);
             if (recv != null) {
                 var applicable_q = recv.?.findCell("applicable?");
-                if (applicable_q != null and applicable_q.?.value != null and applicable_q.?.value.? != ctx.runtime.nul.?.data.?) {
+                if (applicable_q != null and applicable_q.?.value != null and applicable_q.?.value.? != ctx.runtime.nul.?.data) {
                     // var applicableMsgDataAsMsg = IokeData{.IokeObject = ctx.runtime.isApplicableMessage.?};
-                    var arg = ctx.runtime.createMessage(Message.wrap1(message)).data.?;
+                    var arg = ctx.runtime.createMessage(Message.wrap1(message)).data;
                     // self: *Self, message: *IokeObject, context: *IokeObject, recv: *IokeData, argument: *IokeData
                     // TODO error check the null below
                     return IokeObject.isTrue(self.send1(ctx.runtime.isApplicableMessage.?, ctx, pass, arg).?);

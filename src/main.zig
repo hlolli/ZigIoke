@@ -26,6 +26,7 @@ pub fn main() void {
         .interpreter = &interpreter,
     };
     std.log.info("\n nil0 {*}\n", .{&runtime});
+    std.log.info("\n allocator! {*}\n", .{&allocator});
     runtime.init();
 
     // root context
@@ -37,6 +38,9 @@ pub fn main() void {
         .name = "."[0..],
         .isTerminator = true,
     };
+
+    mx.setLine(0);
+    mx.setPosition(0);
 
     var message = runtime.createMessage(&mx);
 

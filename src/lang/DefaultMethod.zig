@@ -19,13 +19,13 @@ pub const DefaultMethod = struct {
     // receiver, context, message, on
     // @static
     pub fn activateFixed(receiver: *IokeObject, context: *IokeObject, message: *IokeObject, on: *IokeObject) ?*IokeObject {
-        if (receiver.data == null or IokeDataHelpers.getDefaultMethod(receiver.data.?) == null) {
+        if (IokeDataHelpers.getDefaultMethod(receiver.data) == null) {
             // TODO THROW ERROR
             std.log.err("TODO throw error on NonActivable\n", .{});
             return null;
         }
 
-        var dm = IokeDataHelpers.getDefaultMethod(receiver.data.?).?;
+        var dm = IokeDataHelpers.getDefaultMethod(receiver.data).?;
         var c = context.runtime.locals.?.mimic(message, context);
         c.setCellFromObject("self"[0..], on);
         c.setCellFromObject("@"[0..], on);

@@ -33,7 +33,7 @@ pub const Message = struct {
     prev: ?*IokeObject = null,
     name: []const u8,
     file: []const u8 = "FIXME"[0..],
-    arguments: *ArrayList(IokeObject) = undefined,
+    arguments: ?*ArrayList(*IokeObject) = null,
     runtime: *Runtime,
 
     pub fn deinit(self: *Self) void { }
@@ -51,12 +51,20 @@ pub const Message = struct {
     //     return ret;
     // }
 
-    pub fn getArguments(self: *Self) *ArrayList(IokeObject) {
+    pub fn getArguments(self: *Self) ?*ArrayList(*IokeObject) {
         return self.arguments;
     }
 
-    pub fn setArguments(self: *Self, args: *ArrayList(IokeObject)) void {
+    pub fn setArguments(self: *Self, args: *ArrayList(*IokeObject)) void {
         self.arguments = args;
+    }
+
+    pub fn appendArgument(self: *Self, arg: *IokeObject) void {
+        if (self.arguments == null) {
+            var newArgz = ArrayList(*IokeObject).init(self.runtime.allocator);
+            self.arguments = &newArgz;
+        }
+        self.arguments.?.append(arg) catch unreachable;
     }
 
     // pub fn setArgumentsStatic(msg: *IokeObject, args: *ArrayList(IokeObject)) void {
@@ -73,18 +81,26 @@ pub const Message = struct {
         self.position = currentChar;
     }
 
-    // @static
-    pub fn cloneData(obj: *IokeObject, message: ?*IokeObject, context: ?*IokeObject) *IokeData {
-        var oldMessage = if (obj.data != null and IokeDataHelpers.isMessage(obj.data.?)) IokeDataHelpers.getMessage(obj.data.?) else null;
+    pub fn cloneData(self: ?*Self, obj: *IokeObject) *IokeData {
+        // var oldMessage = if (obj.data != null and IokeDataHelpers.isMessage(obj.data.?)) IokeDataHelpers.getMessage(obj.data.?) else null;
         var newMessage = Message{
             .runtime = obj.runtime,
-            .name = if (oldMessage == null) "ERROR"[0..] else oldMessage.?.name,
+            .name = if (self != null) self.?.name else ""[0..],
         };
-        newMessage.arguments = &(ArrayList(IokeObject).init(obj.runtime.allocator));
-        newMessage.isTerminator = if (oldMessage != null) oldMessage.?.isTerminator else false;
-        newMessage.file = if (oldMessage != null) oldMessage.?.file else ""[0..];
-        newMessage.line = if (oldMessage != null and oldMessage.?.line != null) oldMessage.?.line else null;
-        newMessage.position = if (oldMessage != null and oldMessage.?.position != null) oldMessage.?.position else null;
+        if (IokeDataHelpers.isMessage(obj.data)) {
+            var newArgz = ArrayList(*IokeObject).init(obj.runtime.allocator);
+            newMessage.arguments = &newArgz;
+            var objMsg = IokeDataHelpers.getMessage(obj.data);
+
+            if (objMsg.?.arguments != null) {
+                const slice = objMsg.?.arguments.?.items[0..objMsg.?.arguments.?.items.len];
+                newArgz.insertSlice(0, slice) catch unreachable;
+            }
+            newMessage.isTerminator = objMsg.?.isTerminator;
+            newMessage.file = objMsg.?.file;
+            newMessage.line = objMsg.?.line;
+            newMessage.position = objMsg.?.position;
+        }
         var newMessageData: IokeData = IokeData{
             .Message = &newMessage,
         };

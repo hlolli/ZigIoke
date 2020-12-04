@@ -4,6 +4,8 @@ const AutoHashMap = std.AutoHashMap;
 const StringIterator = std.unicode.Utf8Iterator;
 const Interpreter = @import("./Interpreter.zig").Interpreter;
 const IokeData = @import("./IokeData.zig").IokeData;
+const IokeDataTag = @import("./IokeData.zig").IokeDataTag;
+const IokeDataType = @import("./IokeData.zig").IokeDataType;
 const IokeIO = @import("./IokeIO.zig").IokeIO;
 const IokeObjectNS = @import("./IokeObject.zig");
 const IokeObject = @import("./IokeObject.zig").IokeObject;
@@ -29,6 +31,7 @@ pub const Runtime = struct {
     allocator: *Allocator,
     interpreter: *Interpreter,
 
+    none: ?*IokeData = null,
     nul: ?*IokeObject = null,
 
     base: ?*IokeObject = null,
@@ -149,13 +152,11 @@ pub const Runtime = struct {
         return getNextId_();
     }
 
-    pub fn getNil(self: *Self) ?*IokeObject {
+    pub fn getNil(self: *Self) *IokeObject {
         if (self.nil == null) {
             std.log.err("\n very very bad {*}\n", .{self});
-            return null;
-        } else {
-            return self.nil;
         }
+        return self.nil.?;
     }
 
     pub fn newMessage(self: *Self, name: []const u8) *IokeObject {
@@ -164,13 +165,26 @@ pub const Runtime = struct {
     }
 
     pub fn createMessage(self: *Self, m: *Message) *IokeObject {
-        var objCopy = self.message.?.allocateCopy(null, null);
+        var _newMessageBody = Body{.allocator = self.allocator};
         var iokeData: IokeData = IokeData{
             .Message = m,
         };
-        objCopy.singleMimicsWithoutCheck(self.message.?);
-        objCopy.setData(&iokeData);
-        return objCopy;
+        var newMessageObj = IokeObject{
+            .runtime = self,
+            .body = &_newMessageBody,
+            .documentation = self.message.?.documentation,
+            .data = &iokeData,
+        };
+        // @memcpy(noalias dest: [*]u8, noalias source: [*]const u8, byte_count: usize);
+        // var _nullobj: ?*IokeObject = null;
+        // var objCopy: ?IokeObject = null;
+        // @memcpy(objCopy, self.message.?, @sizeOf(IokeObject));
+        // var objCopy = self.message.?.allocateCopy(_nullobj, _nullobj);
+        // var objCopy = self.message.?.allocateCopy(_nullobj, _nullobj);
+        std.log.info("0mimic__{*}\n", .{self.message.?.body});
+        newMessageObj.singleMimicsWithoutCheck(self.message.?);
+        // objCopy.setData(&iokeData);
+        return &newMessageObj;
     }
 
     pub fn newText(self: *Self, text_: []const u8) *IokeObject {
@@ -286,8 +300,12 @@ pub const Runtime = struct {
     pub fn init(self: *Self) void {
         self.symbolTable = AutoHashMap([]const u8, IokeObject).init(self.allocator);
 
+        var none = IokeData{.None = IokeDataTag.None};
+        self.none = &none;
+
         var groundBody = Body{.allocator = self.allocator};
         var newGround = IokeObject{
+            .data = &none,
             .body = &groundBody,
             .runtime = self,
             .documentation = "Ground is the default place code is evaluated in."[0..],
@@ -298,6 +316,7 @@ pub const Runtime = struct {
 
         var nulBody = Body{.allocator = self.allocator};
         var newNul = IokeObject{
+            .data = &none,
             .body = &nulBody,
             .runtime = self,
             .documentation = "NOT TO BE EXPOSED TO Ioke - used for internal usage only",
@@ -316,16 +335,17 @@ pub const Runtime = struct {
 
         var _messageBody = Body{.allocator = self.allocator};
         var _newMessage = IokeObject{
+            .data = &messageData,
             .body = &_messageBody,
             .runtime = self,
             .documentation = "A Message is the basic code unit in Ioke."[0..],
-            .data = &messageData,
         };
         self.message = &_newMessage;
         // self.message.?.init();
 
         var _baseBody = Body{.allocator = self.allocator};
         var newBase = IokeObject{
+            .data = &none,
             .body = &_baseBody,
             .runtime = self,
             .documentation = (
@@ -338,6 +358,7 @@ pub const Runtime = struct {
 
         var _iokeGroundBody = Body{.allocator = self.allocator};
         var newIokeGround = IokeObject{
+            .data = &none,
             .body = &_iokeGroundBody,
             .runtime = self,
             .documentation = "IokeGround is the place that mimics default behavior, and where most global objects are defined.."[0..],
@@ -347,6 +368,7 @@ pub const Runtime = struct {
 
         var _conditionBody = Body{.allocator = self.allocator};
         var newCondition = IokeObject{
+            .data = &none,
             .body = &_conditionBody,
             .runtime = self,
             .documentation = "The root mimic of all the conditions in the system."[0..],
@@ -356,6 +378,7 @@ pub const Runtime = struct {
 
         var _localsBody = Body{.allocator = self.allocator};
         var newLocals = IokeObject{
+            .data = &none,
             .body = &_localsBody,
             .runtime = self,
             .documentation = "Contains all the locals for a specific invocation."[0..],
@@ -365,6 +388,7 @@ pub const Runtime = struct {
         // TODO missing IokeSystem in .data
         var _systemBody = Body{.allocator = self.allocator};
         var newSystem = IokeObject{
+            .data = &none,
             .body = &_systemBody,
             .runtime = self,
             .documentation = "System defines things that represents the currently running system, such as the load path."[0..],
@@ -379,6 +403,7 @@ pub const Runtime = struct {
         };
 
         var nilObj = IokeObject{
+            .data = &none,
             .runtime = self,
             .body = &nilBody,
             .toString = "nil"[0..],
@@ -392,10 +417,10 @@ pub const Runtime = struct {
 
         var _nilBody = Body{.allocator = self.allocator};
         var newNil = IokeObject{
+            .data = &nilData,
             .body = &_nilBody,
             .runtime = self,
             .documentation = "nil is an oddball object that always represents itself. It can not be mimicked and (alongside false) is one of the two false values."[0..],
-            .data = &nilData,
         };
         self.nil = &newNil;
         // self.nil.?.*.init();
@@ -407,10 +432,10 @@ pub const Runtime = struct {
         var _textData = IokeData {.Text = &_textObj};
 
         var _newText = IokeObject{
+            .data = &_textData,
             .body = &_textBody,
             .runtime = self,
             .documentation = "Contains an immutable piece of text."[0..],
-            .data = &_textData,
         };
         self.text = &_newText;
         // self.text.?.init();
@@ -435,6 +460,7 @@ pub const Runtime = struct {
 
         var _defaultBehaviorBody = Body{.allocator = self.allocator};
         var newDefaultBehavior = IokeObject{
+            .data = &none,
             .body = &_defaultBehaviorBody,
             .runtime = self,
             .documentation = "DefaultBehavior is a mixin that provides most of the methods shared by most instances in the system."[0..],
@@ -445,6 +471,7 @@ pub const Runtime = struct {
 
         var _originBody = Body{.allocator = self.allocator};
         var newOrigin = IokeObject{
+            .data = &none,
             .body = &_originBody,
             .runtime = self,
             .documentation = "Any object created from scratch should usually be derived from Origin."[0..],
@@ -456,6 +483,7 @@ pub const Runtime = struct {
         // std.log.info("\n nil1 {}\n", .{self.nil == null});
         var _trueBody = Body{.allocator = self.allocator};
         var _trueObj = IokeObject{
+            .data = &none,
             .body = &_trueBody,
             .runtime = self,
             .toString = "true"[0..],
@@ -485,6 +513,7 @@ pub const Runtime = struct {
         };
 
         var _falseObj = IokeObject{
+            .data = &none,
             .body = &_falseBody,
             .runtime = self,
             .toString = "false"[0..]

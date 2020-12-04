@@ -23,8 +23,8 @@ pub const ChainContext = struct {
             self.last = msg;
             self.head = msg;
         } else if (self.last != null) {
-            self.last.?.data.?.Message.?.setNext(msg);
-            msg.data.?.Message.?.setNext(msg);
+            self.last.?.data.Message.?.setNext(msg);
+            msg.data.Message.?.setNext(msg);
             self.last = msg;
         }
         if (self.currentLevel.type == Level.Type.UNARY) {
@@ -52,8 +52,8 @@ pub const ChainContext = struct {
     }
 
     pub fn pop(self: *Self) ?*IokeObject {
-        if (self.head != null and self.head.?.data != null) {
-            const headMessage = IokeDataHelpers.getMessage(self.head.?.data.?);
+        if (self.head != null) {
+            const headMessage = IokeDataHelpers.getMessage(self.head.?.data);
             if (headMessage != null and headMessage.?.isTerminator and headMessage.?.next != null) {
                 headMessage.?.setPrev(self.head);
                 return self.pop();
@@ -81,11 +81,11 @@ pub const ChainContext = struct {
                 or self.currentLevel.type == Level.Type.UNARY)
                   and self.currentLevel.precedence <= precedence) {
             const arg = self.pop();
-            if (arg == null or arg.?.data == null) {
+            if (arg == null) {
                 std.log.err("ChainContext.popOperatorsTo failed\n", .{});
                 return;
             }
-            const currentMessage = IokeDataHelpers.getMessage(arg.?.data.?);
+            const currentMessage = IokeDataHelpers.getMessage(arg.?.data);
 
             if (currentMessage == null) {
                 std.log.err("ChainContext.popOperatorsTo failed: empty data\n", .{});
@@ -97,18 +97,18 @@ pub const ChainContext = struct {
             const arg_ = if (arg != null and isTerminator and nextMsg == null) null else arg;
 
             const op = self.currentLevel.operatorMessage;
-            const opMessage = if(op != null) IokeDataHelpers.getMessage(op.?.data.?) else null;
+            const opMessage = if(op != null) IokeDataHelpers.getMessage(op.?.data) else null;
 
-            if (opMessage != null and self.currentLevel.type == Level.Type.INVERTED and opMessage.?.prev != null and opMessage.?.prev.?.data != null) {
+            if (opMessage != null and self.currentLevel.type == Level.Type.INVERTED and opMessage.?.prev != null) {
 
-                var opMsgPrev = IokeDataHelpers.getMessage(opMessage.?.prev.?.data.?);
+                var opMsgPrev = IokeDataHelpers.getMessage(opMessage.?.prev.?.data);
                 if (opMsgPrev == null) {
                     std.log.err("ChainContext.popOperatorsTo failed: missing link\n", .{});
                     return;
                 }
                 opMsgPrev.?.*.setNext(null);
                 if (self.head != null) {
-                    opMsgPrev.?.arguments.append(self.head.?.*) catch unreachable;
+                    opMsgPrev.?.appendArgument(self.head.?);
                 }
                 self.head = arg_;
             }
