@@ -14,12 +14,10 @@ const DefaultMethod = @import("./DefaultMethod.zig").DefaultMethod;
 
 pub const ArgumentsDefinitionTag = enum {
     DefaultMethod,
-
 };
 
 pub const ArgumentsDefinition = union(ArgumentsDefinitionTag) {
     DefaultMethod
 };
-
 
 pub const ArgumentsDefinitionHelpers = struct {};

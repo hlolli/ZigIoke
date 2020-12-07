@@ -5,10 +5,7 @@ const IokeObject = @import("../IokeObject.zig").IokeObject;
 pub const Level = struct {
     const Self = @This();
     pub const Type = enum {
-        REGULAR,
-        UNARY,
-        ASSIGNMENT,
-        INVERTED
+        REGULAR, UNARY, ASSIGNMENT, INVERTED
     };
 
     precedence: i32 = -1,

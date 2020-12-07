@@ -26,9 +26,7 @@ pub const String = struct {
     pub fn toUpperCase(string: []u8) void {
         for (string) |c, i| {
             if (ascii_lower_start <= c and c <= ascii_lower_end) {
-                string[i] = ascii_upper[@call(
-                    .{ .modifier = .always_inline },
-                    lower_map, .{ c })];
+                string[i] = ascii_upper[@call(.{ .modifier = .always_inline }, lower_map, .{c})];
             }
         }
     }

@@ -62,17 +62,16 @@ pub const IokeParser = struct {
     }
 
     pub fn init(self: *Self) void {
-
         self.operatorTable = AutoHashMap([]const u8, OpUnion).init(self.allocator);
         self.trinaryOperatorTable = AutoHashMap([]const u8, OpUnion).init(self.allocator);
         self.invertedOperatorTable = AutoHashMap([]const u8, OpUnion).init(self.allocator);
         self.unaryOperators = AutoHashMap([]const u8, []const u8).init(self.allocator);
         self.onlyUnaryOperators = AutoHashMap([]const u8, []const u8).init(self.allocator);
         // self.operatorTable.?.ensureCapacity(1) catch unreachable;
-        var operators = Operators{};
+        var operators = self.allocator.create(Operators) catch unreachable;
+        operators.* = Operators{};
         operators.createOrGetOpTables(self);
     }
-
 
     fn read(self: *Self) i64 {
         if (self.saved > -2) {
@@ -88,7 +87,7 @@ pub const IokeParser = struct {
             }
 
             self.currentCharacter += 1;
-            _ = switch(tmp) {
+            _ = switch (tmp) {
                 '\r' => {
                     self.skipLF = true;
                 },
@@ -96,7 +95,7 @@ pub const IokeParser = struct {
                     self.lineNumber += 1;
                     self.currentCharacter = 0;
                 },
-                else => {}
+                else => {},
             };
 
             return tmp;
@@ -119,13 +118,13 @@ pub const IokeParser = struct {
 
         self.currentCharacter += 1;
 
-        _ = switch(tmp2) {
+        _ = switch (tmp2) {
             '\r' => self.skipLF = true,
             '\n' => {
                 self.lineNumber += 1;
                 self.currentCharacter = 0;
             },
-            else => null
+            else => null,
         };
 
         return tmp2;
@@ -181,7 +180,6 @@ pub const IokeParser = struct {
     }
 
     fn readWhiteSpace(self: *Self) void {
-
         var rr: i64 = self.peek();
         var currentIsWhiteSpace: bool = self.isWhiteSpace(rr);
         while (currentIsWhiteSpace) {
@@ -195,22 +193,8 @@ pub const IokeParser = struct {
         return switch (c) {
             '0'...'9',
             // unicode identifiers
-            0x0660...0x0669,
-            0x06F0...0x06F9,
-            0x0966...0x096F,
-            0x09E6...0x09EF,
-            0x0A66...0x0A6F,
-            0x0AE6...0x0AEF,
-            0x0B66...0x0B6F,
-            0x0BE7...0x0BEF,
-            0x0C66...0x0C6F,
-            0x0CE6...0x0CEF,
-            0x0D66...0x0D6F,
-            0x0E50...0x0E59,
-            0x0ED0...0x0ED9,
-            0x1040...0x1049
-                => true,
-            else => false
+            0x0660...0x0669, 0x06F0...0x06F9, 0x0966...0x096F, 0x09E6...0x09EF, 0x0A66...0x0A6F, 0x0AE6...0x0AEF, 0x0B66...0x0B6F, 0x0BE7...0x0BEF, 0x0C66...0x0C6F, 0x0CE6...0x0CEF, 0x0D66...0x0D6F, 0x0E50...0x0E59, 0x0ED0...0x0ED9, 0x1040...0x1049 => true,
+            else => false,
         };
     }
 
@@ -289,8 +273,7 @@ pub const IokeParser = struct {
     }
 
     fn peek2(self: *Self) i64 {
-
-        if(self.saved == -2) {
+        if (self.saved == -2) {
             var tmp_ = self.iterator.nextCodepoint();
             if (tmp_ == null) {
                 return -1;
@@ -300,7 +283,7 @@ pub const IokeParser = struct {
             self.saved = tmp;
         }
 
-        if(self.saved2 == -2) {
+        if (self.saved2 == -2) {
             var tmp_ = self.iterator.nextCodepoint();
             if (tmp_ == null) {
                 return -1;
@@ -311,7 +294,6 @@ pub const IokeParser = struct {
         }
 
         return self.saved2;
-
     }
 
     pub fn parseFully(self: *Self) ?*IokeObject {
@@ -319,18 +301,26 @@ pub const IokeParser = struct {
     }
 
     fn parseMessageChain(self: *Self) ?*IokeObject {
-        var newTop: ChainContext =
-            if (self.top == null)  ChainContext{} else
-            ChainContext{ .parent = self.top, };
-
-        self.top = &newTop;
-        while(self.parseMessage()) {}
+        var newTop = self.allocator.create(ChainContext) catch unreachable;
+        if (self.top == null) {
+            newTop.* = ChainContext{.allocator = self.allocator};
+        } else {
+            newTop.* = ChainContext{.allocator = self.allocator, .parent = self.top};
+            // newTop.parent = self.top;
+            //     {
+                //         .allocator = self.allocator,
+            //     .parent = self.top,
+            // };
+        }
+        newTop.init();
+        self.top = newTop;
+        while (self.parseMessage()) {}
 
         newTop.popOperatorsTo(999999);
         const retPtr = newTop.pop();
 
-        if (self.top.?.*.parent != null) {
-            self.top = self.top.?.*.parent;
+        if (self.top.?.parent != null) {
+            self.top = self.top.?.parent;
         }
 
         return retPtr;
@@ -341,12 +331,11 @@ pub const IokeParser = struct {
         var fbs = std.io.fixedBufferStream(&buf);
         const writer = fbs.writer();
 
-        switch(c) {
+        switch (c) {
             -1 => std.fmt.format(writer, "EOF", .{}) catch unreachable,
             9 => std.fmt.format(writer, "TAB", .{}) catch unreachable,
             10, 13 => std.fmt.format(writer, "EOL", .{}) catch unreachable,
-            else =>
-                std.fmt.format(writer, "'{}'", .{c}) catch unreachable,
+            else => std.fmt.format(writer, "'{}'", .{c}) catch unreachable,
         }
 
         return fbs.getWritten();
@@ -358,14 +347,11 @@ pub const IokeParser = struct {
 
         self.readWhiteSpace();
         const rr = self.read();
-        if(rr != char) {
+        if (rr != char) {
             var buf: [100]u8 = undefined;
             var fbs = std.io.fixedBufferStream(&buf);
             const writer = fbs.writer();
-            std.fmt.format(
-                writer,
-                "Expected: '{}' got: {}", .{char, self.charDesc(rr)}
-            ) catch unreachable;
+            std.fmt.format(writer, "Expected: '{}' got: {}", .{ char, self.charDesc(rr) }) catch unreachable;
             self.parseFail(l, cc, fbs.getWritten());
         }
     }
@@ -377,56 +363,52 @@ pub const IokeParser = struct {
         var buf: [12]u8 = undefined;
         var fbs = std.io.fixedBufferStream(&buf);
         const writer = fbs.writer();
-        std.fmt.format(writer, "{}" , .{indicator} ) catch unreachable;
+        std.fmt.format(writer, "{}", .{indicator}) catch unreachable;
 
         var rr: i64 = -1;
         rr = self.peek();
 
-        while(true) {
-
-            switch(rr) {
-                '+', '-', '*', '%',
-                '<', '>', '!', '?',
-                '~', '&', '|', '^',
-                '$', '=', '@', '\'',
-                '`', ',', '#' => {
+        while (true) {
+            switch (rr) {
+                '+', '-', '*', '%', '<', '>', '!', '?', '~', '&', '|', '^', '$', '=', '@', '\'', '`', ',', '#' => {
                     _ = self.read();
-                    std.fmt.format(writer, "{}" , .{rr} ) catch unreachable;
+                    std.fmt.format(writer, "{}", .{rr}) catch unreachable;
                     break;
                 },
                 else => {
                     if (rr == '/' and indicator != '#') {
                         _ = self.read();
-                        std.fmt.format(writer, "{}" , .{rr} ) catch unreachable;
+                        std.fmt.format(writer, "{}", .{rr}) catch unreachable;
                         break;
                     }
 
-                    var m = Message{
+                    var m = self.allocator.create(Message) catch unreachable;
+                    m.* = Message{
                         .runtime = self.runtime,
                         .name = fbs.getWritten(),
                         .line = l,
                         .position = cc,
                     };
 
-                    var mx = self.runtime.createMessage(&m);
+                    var mx = self.runtime.createMessage(m);
 
-                    if(rr == '(') {
+                    if (rr == '(') {
                         _ = self.read();
                         var args = self.parseCommaSeparatedMessageChains();
                         self.parseCharacter(')');
                         mx.data.Message.?.setArguments(args);
-                        self.top.?.*.add(mx);
+                        self.top.?.add(mx);
                     } else {
                         self.possibleOperator(mx);
                     }
                     return;
-                }
+                },
             }
         }
     }
 
     fn parseFail(self: *Self, line: u32, char: u32, msg: []u8) void {
-        std.log.err("file TODO:{}:{}:{}", .{line, char, msg});
+        std.log.err("file TODO:{}:{}:{}", .{ line, char, msg });
     }
 
     fn parseCommaSeparatedMessageChains(self: *Self) *ArrayList(*IokeObject) {
@@ -438,19 +420,19 @@ pub const IokeParser = struct {
             chain.append(curr.?) catch unreachable;
             self.readWhiteSpace();
             var rr: i64 = self.peek();
-            if(rr == ',') {
+            if (rr == ',') {
                 _ = self.read();
                 curr = self.parseMessageChain();
-                if(curr == null) {
+                if (curr == null) {
                     var buf: [100]u8 = undefined;
                     var fbs = std.io.fixedBufferStream(&buf);
                     const writer = fbs.writer();
-                    std.fmt.format( writer, "Expected expression following comma" , .{} ) catch unreachable;
+                    std.fmt.format(writer, "Expected expression following comma", .{}) catch unreachable;
                     self.parseFail(self.lineNumber, self.currentCharacter, fbs.getWritten());
                     break;
                 }
             } else {
-                if(curr != null and curr.?.data.Message.?.isTerminator and curr.?.data.Message.?.next == null) {
+                if (curr != null and curr.?.data.Message.?.isTerminator and curr.?.data.Message.?.next == null) {
                     _ = chain.orderedRemove(chain.items.len - 1);
                 }
                 curr = null;
@@ -459,11 +441,11 @@ pub const IokeParser = struct {
         return &chain;
     }
 
-
     fn isUnary(self: *Self, name: []const u8) bool {
         if (self.unaryOperators.?.contains(name) and
-                (self.top.?.*.head == null or
-                     self.top.?.*.last != null and self.top.?.last.?.data.Message.?.isTerminator)) {
+            (self.top.?.*.head == null or
+            self.top.?.*.last != null and self.top.?.last.?.data.Message.?.isTerminator))
+        {
             return true;
         } else {
             return false;
@@ -483,8 +465,7 @@ pub const IokeParser = struct {
                 '&' => {
                     return 7;
                 },
-                '=', '!', '?',
-                '~', '$' => {
+                '=', '!', '?', '~', '$' => {
                     return 6;
                 },
                 '>', '<' => {
@@ -498,7 +479,7 @@ pub const IokeParser = struct {
                 },
                 else => {
                     return -1;
-                }
+                },
             }
         }
     }
@@ -512,13 +493,11 @@ pub const IokeParser = struct {
             return;
         }
 
-        if(self.isUnary(name) or self.onlyUnaryOperators.?.contains(name)) {
+        if (self.isUnary(name) or self.onlyUnaryOperators.?.contains(name)) {
             self.top.?.add(mx);
             self.top.?.push(-1, mx, Level.Type.UNARY);
             return;
         }
-
-
     }
 
     fn parseEmptyMessageSend(self: *Self) void {
@@ -527,13 +506,14 @@ pub const IokeParser = struct {
         var args = self.parseCommaSeparatedMessageChains();
         self.parseCharacter(')');
 
-        var m: Message = Message{
+        var m = self.allocator.create(Message) catch unreachable;
+        m.* = Message{
             .runtime = self.runtime,
-            .name = ""[0..]
+            .name = ""[0..],
         };
         m.setLine(l);
         m.setPosition(cc);
-        var mx = self.runtime.createMessage(&m);
+        var mx = self.runtime.createMessage(m);
         mx.data.Message.?.setArguments(args);
         self.top.?.*.add(mx);
     }
@@ -545,16 +525,17 @@ pub const IokeParser = struct {
         const rr: i64 = self.peek();
         const r2: i64 = self.peek2();
 
-        var m = Message{
+        var m = self.allocator.create(Message) catch unreachable;
+        m.* = Message{
             .runtime = self.runtime,
             .name = name,
             .line = l,
             .position = cc,
         };
 
-        var mx = self.runtime.createMessage(&m);
+        var mx = self.runtime.createMessage(m);
 
-        if(rr == end and r2 == '(') {
+        if (rr == end and r2 == '(') {
             _ = self.read();
             _ = self.read();
             var args = self.parseCommaSeparatedMessageChains();
@@ -575,31 +556,33 @@ pub const IokeParser = struct {
         var buf: [256]u8 = undefined;
         var fbs = std.io.fixedBufferStream(&buf);
         const writer = fbs.writer();
-        std.fmt.format(writer, "{}" , .{indicator} ) catch unreachable;
+        std.fmt.format(writer, "{}", .{indicator}) catch unreachable;
 
         var rr: i64 = -1;
         rr = self.peek();
 
-        while(self.isLetter(rr) or
-                  self.isIDDigit(rr) or
-                  rr == ':' or
-                  rr == '!' or
-                  rr == '?' or
-                  rr == '$') {
+        while (self.isLetter(rr) or
+            self.isIDDigit(rr) or
+            rr == ':' or
+            rr == '!' or
+            rr == '?' or
+            rr == '$')
+        {
             _ = self.read();
-            std.fmt.format(writer, "{}" , .{rr} ) catch unreachable;
+            std.fmt.format(writer, "{}", .{rr}) catch unreachable;
             rr = self.peek();
         }
-        var m: Message = Message{
+        var m = self.allocator.create(Message) catch unreachable;
+        m.* = Message{
             .runtime = self.runtime,
             .name = fbs.getWritten(),
             .line = l,
             .position = cc,
         };
 
-        var mx = self.runtime.createMessage(&m);
+        var mx = self.runtime.createMessage(m);
 
-        if(rr == '(') {
+        if (rr == '(') {
             _ = self.read();
             var args = self.parseCommaSeparatedMessageChains();
             self.parseCharacter(')');
@@ -613,9 +596,7 @@ pub const IokeParser = struct {
     }
 
     pub fn parseMessage(self: *Self) bool {
-
         while (true) {
-
             var rr = self.peek();
 
             if (rr == -1) {
@@ -623,7 +604,7 @@ pub const IokeParser = struct {
                 return false;
             }
 
-            switch(rr) {
+            switch (rr) {
                 ',', ')', ']', '}' => return false,
                 '(' => {
                     _ = self.read();
@@ -638,15 +619,10 @@ pub const IokeParser = struct {
                     self.parseOpenCloseMessageSend('}', "{}"[0..]);
                     return true;
                 },
-                '+', '-', '*', '%',
-                '<', '>', '!', '?',
-                '~', '&','|', '^',
-                '$', '=', '@', '\'',
-                '`', '/' => {
+                '+', '-', '*', '%', '<', '>', '!', '?', '~', '&', '|', '^', '$', '=', '@', '\'', '`', '/' => {
                     _ = self.read();
                     self.parseOperatorChars(rr);
                     return true;
-
                 },
                 else => {
                     _ = self.read();
@@ -659,8 +635,6 @@ pub const IokeParser = struct {
         }
     }
 };
-
-
 
 // Tests
 

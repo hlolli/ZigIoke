@@ -16,7 +16,6 @@ pub const Interpreter = struct {
 
     // @static
     pub fn evaluate(self: *Self, message: ?*IokeObject, ctx: *IokeObject, receiver: *IokeObject, lastReal_: ?*IokeObject) *IokeObject {
-
         var lastReal: *IokeObject = if (lastReal_ == null) ctx.runtime.getNil() else lastReal_.?;
         if (message == null or !IokeDataHelpers.isMessage(message.?.data)) {
             return lastReal;
@@ -35,22 +34,20 @@ pub const Interpreter = struct {
         } else if (String.equals(message.?.data.Message.?.name, "."[0..])) {
             return self.evaluate(message.?.next, ctx, ctx, lastReal);
         } else if (message.?.data.Message.?.name.len > 0 and
-                       (message.?.data.Message.?.arguments == null or
-                            message.?.data.Message.?.arguments.?.items.len == 0) and
-                       message.?.data.Message.?.name[0] == ':') {
+            (message.?.data.Message.?.arguments == null or
+            message.?.data.Message.?.arguments.?.items.len == 0) and
+            message.?.data.Message.?.name[0] == ':')
+        {
             var lastRealObj = message.?.runtime.getSymbol(message.?.data.Message.?.name[1..]);
 
             return self.evaluate(message.?.next, ctx, lastRealObj, lastRealObj);
-
         } else {
-
             var perf_ret_ = self.perform5(receiver, receiver, ctx, message.?, message.?.data.Message.?.name);
             if (perf_ret_ == null) {
                 std.log.err("Something went wrong in evaluation.\n", .{});
                 return lastReal;
             } else {
                 return self.evaluate(message.?.next, ctx, perf_ret_.?, perf_ret_.?);
-
             }
         }
     }
@@ -67,11 +64,12 @@ pub const Interpreter = struct {
         if (cell != null) {
             while (cell.?.value != null and cell.?.value == runtime.nul.?.data) {
                 passed = recv.findCell("pass"[1..]);
-                cell =  passed;
-                if(passed != null and
-                       passed.?.value != null and
-                       passed.?.value.? != runtime.nul.?.data and
-                       self.isApplicable(passed.?.value.?, message, ctx)) {
+                cell = passed;
+                if (passed != null and
+                    passed.?.value != null and
+                    passed.?.value.? != runtime.nul.?.data and
+                    self.isApplicable(passed.?.value.?, message, ctx))
+                {
                     return cell;
                 }
                 // FIXME!
@@ -141,7 +139,7 @@ pub const Interpreter = struct {
     }
 
     fn isApplicable(self: *Self, pass: *IokeData, message: *IokeObject, ctx: *IokeObject) bool {
-        if(pass != ctx.runtime.nul.?.data) {
+        if (pass != ctx.runtime.nul.?.data) {
             var recv = IokeDataHelpers.as(pass, ctx);
             if (recv != null) {
                 var applicable_q = recv.?.findCell("applicable?");

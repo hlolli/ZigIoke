@@ -3,13 +3,11 @@ const AutoHashMap = std.AutoHashMap;
 const IokeParser = @import("./IokeParser.zig").IokeParser;
 
 pub const OpEntry = struct {
-    name: []const u8,
-    precedence: u16
+    name: []const u8, precedence: u16
 };
 
 pub const OpArity = struct {
-    name: []const u8,
-    arity: u16
+    name: []const u8, arity: u16
 };
 
 pub const OpUnion = union {
@@ -23,11 +21,11 @@ pub const Operators = struct {
     // fn getOpTable() {}
 
     fn addOpEntry(self: *Self, name: []const u8, precedence: u16, current: *AutoHashMap([]const u8, OpUnion)) void {
-        current.put(name, OpUnion{.entry = OpEntry{.name = name, .precedence = precedence}}) catch unreachable;
+        current.put(name, OpUnion{ .entry = OpEntry{ .name = name, .precedence = precedence } }) catch unreachable;
     }
 
     fn addOpArity(self: *Self, name: []const u8, arity: u16, current: *AutoHashMap([]const u8, OpUnion)) void {
-        current.put(name, OpUnion{.arity = OpArity{.name = name, .arity = arity}}) catch unreachable;
+        current.put(name, OpUnion{ .arity = OpArity{ .name = name, .arity = arity } }) catch unreachable;
     }
 
     fn addSetEntry(self: *Self, name: []const u8, id: []const u8, current: *AutoHashMap([]const u8, []const u8)) void {
@@ -101,7 +99,6 @@ pub const Operators = struct {
         self.addOpEntry("||"[0..], 11, &parser.*.operatorTable.?);
         self.addOpEntry("?|"[0..], 11, &parser.*.operatorTable.?);
 
-
         self.addOpEntry(".."[0..], 12, &parser.*.operatorTable.?);
         self.addOpEntry("..."[0..], 12, &parser.*.operatorTable.?);
         self.addOpEntry("=>"[0..], 12, &parser.*.operatorTable.?);
@@ -153,7 +150,6 @@ pub const Operators = struct {
         self.addOpEntry("return"[0..], 14, &parser.*.operatorTable.?);
         self.addOpEntry("import"[0..], 14, &parser.*.operatorTable.?);
 
-
         self.addOpArity("++"[0..], 1, &parser.*.trinaryOperatorTable.?);
         self.addOpArity("--"[0..], 1, &parser.*.trinaryOperatorTable.?);
 
@@ -177,17 +173,13 @@ pub const Operators = struct {
         self.addOpEntry("::"[0..], 12, &parser.*.invertedOperatorTable.?);
         self.addOpEntry(":::"[0..], 12, &parser.*.invertedOperatorTable.?);
 
-
         // invertedOperatorTable;
         // final ioke.lang.Runtime runtime = parser.runtime;
-            // IokeObject opTable = IokeObject.as(IokeObject.findCell(runtime.message, "OperatorTable"), null);
-            // if(opTable == runtime.nul) {
-            //     opTable = runtime.newFromOrigin();
-            //     opTable.setKind("Message OperatorTable");
-            //     runtime.message.setCell("OperatorTable", opTable);
-            // }
-
+        // IokeObject opTable = IokeObject.as(IokeObject.findCell(runtime.message, "OperatorTable"), null);
+        // if(opTable == runtime.nul) {
+        //     opTable = runtime.newFromOrigin();
+        //     opTable.setKind("Message OperatorTable");
+        //     runtime.message.setCell("OperatorTable", opTable);
+        // }
     }
-
-
 };

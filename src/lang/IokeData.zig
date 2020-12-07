@@ -11,15 +11,7 @@ const Symbol = @import("./Symbol.zig").Symbol;
 const Text = @import("./Text.zig").Text;
 
 pub const IokeDataType = enum {
-    NONE,
-    DEFAULT_METHOD,
-    DEFAULT_MACRO,
-    DEFAULT_SYNTAX,
-    LEXICAL_MACRO,
-    ALIAS_METHOD,
-    NATIVE_METHOD,
-    METHOD_PROTOTYPE,
-    LEXICAL_BLOCK
+    NONE, DEFAULT_METHOD, DEFAULT_MACRO, DEFAULT_SYNTAX, LEXICAL_MACRO, ALIAS_METHOD, NATIVE_METHOD, METHOD_PROTOTYPE, LEXICAL_BLOCK
 };
 
 pub const IokeDataTag = enum {
@@ -46,7 +38,7 @@ pub const IokeData = union(IokeDataTag) {
     True: ?*IokeObject,
     // AssociatedCode: ?*AssociatedCode,
     DefaultMethod: ?*DefaultMethod,
-    Method: ?* Method,
+    Method: ?*Method,
     IokeObject: ?*IokeObject,
     IokeParser: ?*IokeParser,
     LexicalContext: ?*LexicalContext,
@@ -72,12 +64,11 @@ fn maybeObject(iokeData: *IokeData) ?*IokeObject {
         },
         else => {
             return null;
-        }
+        },
     }
 }
 
 pub const IokeDataHelpers = struct {
-
     pub fn getDefaultMethod(iokeData: *IokeData) ?*const DefaultMethod {
         if (iokeData.DefaultMethod != null) {
             return iokeData.DefaultMethod.?;
@@ -107,7 +98,7 @@ pub const IokeDataHelpers = struct {
             },
             else => {
                 return false;
-            }
+            },
         }
     }
 
@@ -118,7 +109,7 @@ pub const IokeDataHelpers = struct {
             },
             else => {
                 return null;
-            }
+            },
         }
     }
 
@@ -132,13 +123,12 @@ pub const IokeDataHelpers = struct {
 
     pub fn isAssociatedCode(iokeData: *IokeData) bool {
         switch (iokeData.*) {
-            IokeDataTag.DefaultMethod,
-            IokeDataTag.Method => {
+            IokeDataTag.DefaultMethod, IokeDataTag.Method => {
                 return true;
             },
             else => {
                 return false;
-            }
+            },
         }
     }
 
@@ -164,28 +154,23 @@ pub const IokeDataHelpers = struct {
 
     pub fn isIokeObject(iokeData: *IokeData) bool {
         switch (iokeData.*) {
-            IokeDataTag.IokeObject,
-            IokeDataTag.None,
-            IokeDataTag.Nil,
-            IokeDataTag.False,
-            IokeDataTag.True => {
+            IokeDataTag.IokeObject, IokeDataTag.None, IokeDataTag.Nil, IokeDataTag.False, IokeDataTag.True => {
                 return true;
             },
             else => {
                 return false;
-            }
+            },
         }
     }
 
     pub fn isBoolean(iokeData: *IokeData) bool {
         switch (iokeData.*) {
-            IokeDataTag.False,
-            IokeDataTag.True => {
+            IokeDataTag.False, IokeDataTag.True => {
                 return true;
             },
             else => {
                 return false;
-            }
+            },
         }
     }
 
@@ -206,18 +191,16 @@ pub const IokeDataHelpers = struct {
             IokeDataTag.True => {
                 iokeData.True.?.deinit();
             },
-            else => {}
+            else => {},
         }
     }
 
     pub fn checkMimic(iokeData: *IokeData, message: *IokeObject, context: *IokeObject) void {
         switch (iokeData.*) {
-            IokeDataTag.Nil,
-            IokeDataTag.False,
-            IokeDataTag.True => {
+            IokeDataTag.Nil, IokeDataTag.False, IokeDataTag.True => {
                 // TODO can't mimic oddball!
             },
-            else => {}
+            else => {},
         }
     }
 
@@ -229,25 +212,24 @@ pub const IokeDataHelpers = struct {
         switch (iokeData.*) {
             IokeDataTag.IokeObject => {
                 if (iokeData.IokeObject.?.*.toString != null) {
-                    std.fmt.format(writer, "#<{}:{*}>" , .{iokeData.IokeObject.?.*.toString.?, iokeData.IokeObject.?} ) catch unreachable;
+                    std.fmt.format(writer, "#<{}:{*}>", .{ iokeData.IokeObject.?.*.toString.?, iokeData.IokeObject.? }) catch unreachable;
                 } else if (iokeData.IokeObject.?.*.isNil()) {
-                    std.fmt.format(writer, "#<nul:{*}>" , .{iokeData.IokeObject.?} ) catch unreachable;
+                    std.fmt.format(writer, "#<nul:{*}>", .{iokeData.IokeObject.?}) catch unreachable;
                 } else {
-                    std.fmt.format(writer, "#<object:{*}>" , .{iokeData.IokeObject.?} ) catch unreachable;
+                    std.fmt.format(writer, "#<object:{*}>", .{iokeData.IokeObject.?}) catch unreachable;
                 }
-
             },
             IokeDataTag.Message => {
-                std.fmt.format(writer, "{}" , .{iokeData.Message.?.*.code()} ) catch unreachable;
+                std.fmt.format(writer, "{}", .{iokeData.Message.?.*.code()}) catch unreachable;
             },
             IokeDataTag.Text => {
-                std.fmt.format(writer, "{}" , .{iokeData.Text.?.*.text} ) catch unreachable;
+                std.fmt.format(writer, "{}", .{iokeData.Text.?.*.text}) catch unreachable;
             },
             IokeDataTag.Symbol => {
-                std.fmt.format(writer, "{}" , .{iokeData.Symbol.?.*.text} ) catch unreachable;
+                std.fmt.format(writer, "{}", .{iokeData.Symbol.?.*.text}) catch unreachable;
             },
             IokeDataTag.Level => {
-                std.fmt.format(writer, "Level<{}, {}, {}, {}>" , .{
+                std.fmt.format(writer, "Level<{}, {}, {}, {}>", .{
                     iokeData.Level.?.*.precedence,
                     iokeData.Level.?.*.operatorMessage,
                     iokeData.Level.?.*.type,
@@ -255,11 +237,11 @@ pub const IokeDataHelpers = struct {
                 }) catch unreachable;
             },
             IokeDataTag.LexicalContext => {
-                std.fmt.format(writer, "LexicalContext:{*}" , .{iokeData.LexicalContext.?} ) catch unreachable;
+                std.fmt.format(writer, "LexicalContext:{*}", .{iokeData.LexicalContext.?}) catch unreachable;
             },
             else => {
-                std.fmt.format(writer, "FIXME!!" , .{} ) catch unreachable;
-            }
+                std.fmt.format(writer, "FIXME!!", .{}) catch unreachable;
+            },
         }
         return fbs.getWritten();
     }

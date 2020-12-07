@@ -13,6 +13,5 @@ pub fn IokeIO(allocator: *Allocator, Reader) type {
         pub fn init(self: *Self) i64 {
             _ = self.io.init();
         }
-
-    }
+    };
 }

@@ -4,5 +4,4 @@ const std = @import("std");
 pub const Text = struct {
     const Self = @This();
     text: []const u8,
-
 };

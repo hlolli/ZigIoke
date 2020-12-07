@@ -1,4 +1,5 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const BufferedChain = @import("./BufferedChain.zig").BufferedChain;
 const Level = @import("./Level.zig").Level;
 const Message = @import("../Message.zig").Message;
@@ -7,18 +8,26 @@ const IokeObject = @import("../IokeObject.zig").IokeObject;
 
 pub const ChainContext = struct {
     const Self = @This();
-
-    chains: BufferedChain = BufferedChain.init(),
-    currentLevel: Level = Level{
-        .type = Level.Type.REGULAR,
-        .precedence = -1,
-    },
+    allocator: *Allocator,
+    chains: ?*BufferedChain = null,
+    currentLevel: ?*Level = null,
     parent: ?*ChainContext = null,
     last: ?*IokeObject = null,
     head: ?*IokeObject = null,
 
-    pub fn add(self: *Self, msg: *IokeObject) void {
+    pub fn init(self: *Self) void {
+        var bufferedChain = self.allocator.create(BufferedChain) catch unreachable;
+        bufferedChain.* = BufferedChain{};
+        self.chains = bufferedChain;
+        var currLevel = self.allocator.create(Level) catch unreachable;
+        currLevel.* = Level{
+            .type = Level.Type.REGULAR,
+            .precedence = -1,
+        };
+        self.currentLevel = currLevel;
+    }
 
+    pub fn add(self: *Self, msg: *IokeObject) void {
         if (self.head == null) {
             self.last = msg;
             self.head = msg;
@@ -27,7 +36,7 @@ pub const ChainContext = struct {
             msg.data.Message.?.setNext(msg);
             self.last = msg;
         }
-        if (self.currentLevel.type == Level.Type.UNARY) {
+        if (self.currentLevel.?.type == Level.Type.UNARY) {
             // TODO
             // self.currentLevel.operatorMessage.add(self.pop());
             // currentLevel = currentLevel.parent;
@@ -36,18 +45,23 @@ pub const ChainContext = struct {
 
     pub fn push(self: *Self, precedence: i32, op: *IokeObject, levelType: Level.Type) void {
         std.log.info("\n head-3 {*}\n", .{op.runtime});
-        self.currentLevel = Level{
-            .type = levelType,
-            .precedence = precedence,
-            .parent = &self.currentLevel,
-            .operatorMessage = op,
-        };
-        self.chains = BufferedChain{
-            .parent = &self.chains,
-            .last = self.last,
-            .head = self.head,
-        };
+        self.currentLevel.?.type = levelType;
+        self.currentLevel.?.precedence = precedence;
+        self.currentLevel.?.parent = self.currentLevel;
+        self.currentLevel.?.operatorMessage = op;
+        // = Level{
+            //     .type = levelType,
+        //     .precedence = precedence,
+        //     .parent = &self.currentLevel,
+        //     .operatorMessage = op,
+        // };
+        self.chains.?.parent = self.chains;
+        self.chains.?.last = self.last;
+        self.chains.?.head = self.head;
         self.last = self.head;
+        // if (self.head != null) {
+        //     self.head.?.free();
+        // }
         self.head = null;
     }
 
@@ -68,18 +82,16 @@ pub const ChainContext = struct {
             std.log.info("\n head-2 {*}\n", .{self.head.?.runtime});
         }
 
-        self.head = if (self.chains.head != null) self.chains.head.? else null;
-        self.last = if (self.chains.last != null) self.chains.last.? else null;
-        if (self.chains.parent != null) {
-            self.chains = self.chains.parent.?.*;
+        self.head = if (self.chains.?.head != null) self.chains.?.head.? else null;
+        self.last = if (self.chains.?.last != null) self.chains.?.last.? else null;
+        if (self.chains.?.parent != null) {
+            self.chains = self.chains.?.parent;
         }
         return headToReturn;
     }
 
     pub fn popOperatorsTo(self: *Self, precedence: i32) void {
-        if((self.currentLevel.precedence != -1
-                or self.currentLevel.type == Level.Type.UNARY)
-                  and self.currentLevel.precedence <= precedence) {
+        if ((self.currentLevel.?.precedence != -1 or self.currentLevel.?.type == Level.Type.UNARY) and self.currentLevel.?.precedence <= precedence) {
             const arg = self.pop();
             if (arg == null) {
                 std.log.err("ChainContext.popOperatorsTo failed\n", .{});
@@ -96,11 +108,10 @@ pub const ChainContext = struct {
             const nextMsg = currentMessage.?.next;
             const arg_ = if (arg != null and isTerminator and nextMsg == null) null else arg;
 
-            const op = self.currentLevel.operatorMessage;
-            const opMessage = if(op != null) IokeDataHelpers.getMessage(op.?.data) else null;
+            const op = self.currentLevel.?.operatorMessage;
+            const opMessage = if (op != null) IokeDataHelpers.getMessage(op.?.data) else null;
 
-            if (opMessage != null and self.currentLevel.type == Level.Type.INVERTED and opMessage.?.prev != null) {
-
+            if (opMessage != null and self.currentLevel.?.type == Level.Type.INVERTED and opMessage.?.prev != null) {
                 var opMsgPrev = IokeDataHelpers.getMessage(opMessage.?.prev.?.data);
                 if (opMsgPrev == null) {
                     std.log.err("ChainContext.popOperatorsTo failed: missing link\n", .{});
@@ -121,8 +132,8 @@ pub const ChainContext = struct {
 const expect = std.testing.expect;
 
 test "ChainContext" {
-    var fakeObj: IokeObject = IokeObject {};
-    var fakeChain: ChainContext = ChainContext {};
+    var fakeObj: IokeObject = IokeObject{};
+    var fakeChain: ChainContext = ChainContext{};
     // silly but I dont get logs printer otherwise
     var ret1 = fakeChain.add(&fakeObj);
     var ret2 = fakeChain.add(&fakeObj);

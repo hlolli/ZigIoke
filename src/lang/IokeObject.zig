@@ -56,7 +56,7 @@ pub const IokeObject = struct {
     }
 
     fn checkFrozen(self: *Self, modification: []const u8, message: *IokeObject, context: *IokeObject) void {
-        if(self.isFrozen()) {
+        if (self.isFrozen()) {
             const names = [_][]const u8{
                 "Error",
                 "ModifyOnFrozen",
@@ -101,7 +101,8 @@ pub const IokeObject = struct {
     pub fn getArguments(self: *Self) ?*ArrayList(*IokeObject) {
         var maybeMessage = IokeDataHelpers.getMessage(self.data);
         if (maybeMessage != null) {
-            return maybeMessage.?.getArguments();
+            var maybeArgz = maybeMessage.?.getArguments();
+            return if (maybeArgz == null) null else maybeArgz.?;
         } else {
             std.log.err("Tried to get arguments on non-message type Object and failed!\n", .{});
             return null;
@@ -113,15 +114,16 @@ pub const IokeObject = struct {
     }
 
     pub fn setData(self: *Self, _data: *IokeData) void {
-        self.data.* = _data.*;
+        self.data = _data;
     }
 
     pub fn allocateCopy(self: *Self, msg: ?*IokeObject, context: ?*IokeObject) *IokeObject {
 
-        std.log.info("allbymyself {*} \n", .{self.runtime.allocator});
-        var _newBody = Body{.allocator = self.runtime.allocator};
+        // std.log.info("allbymyself {*} \n", .{self.runtime.allocator});
+        var _newBody = Body{ .allocator = self.runtime.allocator };
         var copiedMsg = if (IokeDataHelpers.isMessage(self.data))
-            Message.cloneData(self.data.Message, self) else
+            Message.cloneData(self.data.Message, self)
+        else
             Message.cloneData(null, self);
 
         var copied = IokeObject{
@@ -133,14 +135,17 @@ pub const IokeObject = struct {
     }
 
     fn transplantActivation(self: *Self, mimic_: *IokeObject) void {
-        if(!self.isSetActivatable() and mimic_.isSetActivatable()) {
-            self.setActivatable(mimic_.isActivatable());
-        }
+        // _ = self.isSetActivatable();
+        _ = mimic_.isSetActivatable();
+        // if(!self.isSetActivatable() and mimic_.isSetActivatable()) {
+        //     self.setActivatable(mimic_.isActivatable());
+        // }
     }
 
     pub fn singleMimicsWithoutCheck(self: *Self, mimic_: *IokeObject) void {
-        std.log.info("self__{*}\n", .{self.body});
-        std.log.info("mimic__{*}\n", .{mimic_.body});
+        // std.log.info("self__{*}\n", .{self.body});
+        // std.log.info("mimic__{}\n", .{self.body});
+        std.log.info("BODYFLAGS 22 {}\n", .{mimic_.body.flags});
         self.body.mimic = mimic_;
         self.body.mimicCount = 1;
         self.transplantActivation(mimic_);
@@ -152,7 +157,7 @@ pub const IokeObject = struct {
         self.body.mimic = self;
         self.body.mimicCount = 1;
         self.transplantActivation(self);
-        if(self.body.hooks != null) {
+        if (self.body.hooks != null) {
             // TODO
             // Hook.fireMimicked(mimic, message, context, this);
             // Hook.fireMimicsChanged(this, message, context, mimic);
@@ -170,7 +175,7 @@ pub const IokeObject = struct {
     }
 
     pub fn setKind(self: *Self, kind: []const u8) void {
-        var textObj: *IokeObject = self.runtime.*.newText(kind);
+        var textObj: *IokeObject = self.runtime.newText(kind);
         var kindData: IokeData = IokeData{
             .IokeObject = textObj,
         };
@@ -181,7 +186,7 @@ pub const IokeObject = struct {
         if (self.isLexical()) {
             return self.data.LexicalContext.?.ground;
         } else {
-            var ret = IokeData{.IokeObject = self};
+            var ret = IokeData{ .IokeObject = self };
             return &ret;
         }
     }
@@ -190,10 +195,10 @@ pub const IokeObject = struct {
         var nul = self.runtime.none.?;
         var cell = self.body.get(name);
 
-        while(true) {
+        while (true) {
             var c = self;
             var b = c.body;
-            if(cell != null and cell.?.value != null) {
+            if (cell != null and cell.?.value != null) {
                 if (cell.?.value.? == nul and c.isLexical()) {
                     c = c.data.LexicalContext.?.surroundingContext;
                 } else {
@@ -204,8 +209,9 @@ pub const IokeObject = struct {
                     if (c.isLexical()) {
                         cell = b.mimic.?.findCell(name);
                         if (cell != null and
-                                cell.?.value != null and
-                                cell.?.value.? != nul) {
+                            cell.?.value != null and
+                            cell.?.value.? != nul)
+                        {
                             return cell;
                         }
                         c = c.data.LexicalContext.?.surroundingContext;
@@ -213,15 +219,18 @@ pub const IokeObject = struct {
                         c = b.mimic.?;
                     }
                 } else {
-                    for (b.mimics.?.items) |mimic_| {
-                        cell = mimic_.findCell(name);
-                        if(cell != null and
-                               cell.?.value != null and
-                               !IokeDataHelpers.isNul(cell.?.value.?, self.runtime)) {
-                            return cell;
+                    if (b.mimics != null) {
+                        for (b.mimics.?.items) |mimic_| {
+                            cell = mimic_.findCell(name);
+                            if (cell != null and
+                                cell.?.value != null and
+                                !IokeDataHelpers.isNul(cell.?.value.?, self.runtime))
+                            {
+                                return cell;
+                            }
                         }
                     }
-                    if(c.isLexical()) {
+                    if (c.isLexical()) {
                         c = c.data.LexicalContext.?.surroundingContext;
                     } else {
                         return null;
@@ -234,7 +243,7 @@ pub const IokeObject = struct {
     // current == self (there's no on it's always IokeObject)
     pub fn getCellChain(self: *Self, message: *IokeObject, context: *IokeObject, names: []const []const u8) ?*IokeData {
         var current: ?*Cell = null;
-        for(names) |name| {
+        for (names) |name| {
             current = self.getCell(message, context, name);
         }
         if (current != null) {
@@ -252,7 +261,7 @@ pub const IokeObject = struct {
             "Invocation",
             "NotActivatable",
         };
-        while(cell != null and cell.?.value != null and !IokeDataHelpers.isNul(cell.?.value.?, self.runtime)) {
+        while (cell != null and cell.?.value != null and !IokeDataHelpers.isNul(cell.?.value.?, self.runtime)) {
             var maybe_condition = self.runtime.condition.?.getCellChain(message, context, &names);
             if (maybe_condition != null) {
                 var condition__ = IokeDataHelpers.as(maybe_condition.?, context).?;
@@ -281,8 +290,7 @@ pub const IokeObject = struct {
     }
 
     pub fn setCellFromObject(self: *Self, name: []const u8, iokeObject: *IokeObject) void {
-        var wrapper = IokeData{.IokeObject = iokeObject};
+        var wrapper = IokeData{ .IokeObject = iokeObject };
         self.body.put(name, &wrapper);
     }
-
 };

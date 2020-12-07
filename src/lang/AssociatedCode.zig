@@ -7,12 +7,11 @@ pub const AssociatedCodeTag = enum {};
 
 pub const AssociatedCode = union(AssociatedCodeTag) {};
 
-
 // public interface AssociatedCode extends CanRun
 // @static - everything here below
 pub const AssociatedCodeHelpers = struct {};
 // pub fn getCode() IokeObject { }
-    // public IokeObject getCode();
-    // public String getArgumentsCode();
-    // public String getFormattedCode(Object self) throws ControlFlow;
+// public IokeObject getCode();
+// public String getArgumentsCode();
+// public String getFormattedCode(Object self) throws ControlFlow;
 // AssociatedCode

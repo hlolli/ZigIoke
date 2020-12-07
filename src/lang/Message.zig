@@ -11,14 +11,12 @@ const Cell = @import("./Cell.zig").Cell;
 const Runtime = @import("./Runtime.zig").Runtime;
 const StringIterator = std.unicode.Utf8Iterator;
 
-
 // fake static
 // pub fn setNext(next: ?IokeObject) void {
 //     if (next != null) {
 //         next.?.next = next;
 //     }
 // }
-
 
 pub const Message = struct {
     const Self = @This();
@@ -36,7 +34,7 @@ pub const Message = struct {
     arguments: ?*ArrayList(*IokeObject) = null,
     runtime: *Runtime,
 
-    pub fn deinit(self: *Self) void { }
+    pub fn deinit(self: *Self) void {}
 
     pub fn getName(self: *Self) []const u8 {
         return self.name;
@@ -61,8 +59,7 @@ pub const Message = struct {
 
     pub fn appendArgument(self: *Self, arg: *IokeObject) void {
         if (self.arguments == null) {
-            var newArgz = ArrayList(*IokeObject).init(self.runtime.allocator);
-            self.arguments = &newArgz;
+            self.arguments = &(ArrayList(*IokeObject).init(self.runtime.allocator));
         }
         self.arguments.?.append(arg) catch unreachable;
     }
@@ -81,32 +78,37 @@ pub const Message = struct {
         self.position = currentChar;
     }
 
-    pub fn cloneData(self: ?*Self, obj: *IokeObject) *IokeData {
+    pub fn cloneData(self: ?*Message, obj: *IokeObject) *IokeData {
         // var oldMessage = if (obj.data != null and IokeDataHelpers.isMessage(obj.data.?)) IokeDataHelpers.getMessage(obj.data.?) else null;
-        var newMessage = Message{
+        var emptyStr = ""[0..];
+        var newMessage = obj.runtime.allocator.create(Message) catch unreachable;
+        newMessage.* = Message{
             .runtime = obj.runtime,
-            .name = if (self != null) self.?.name else ""[0..],
+            .name = if (self != null) self.?.name else emptyStr,
         };
         if (IokeDataHelpers.isMessage(obj.data)) {
-            var newArgz = ArrayList(*IokeObject).init(obj.runtime.allocator);
-            newMessage.arguments = &newArgz;
+            newMessage.arguments = &(ArrayList(*IokeObject).init(obj.runtime.allocator));
             var objMsg = IokeDataHelpers.getMessage(obj.data);
 
             if (objMsg.?.arguments != null) {
                 const slice = objMsg.?.arguments.?.items[0..objMsg.?.arguments.?.items.len];
-                newArgz.insertSlice(0, slice) catch unreachable;
+                newMessage.arguments.?.insertSlice(0, slice) catch unreachable;
             }
             newMessage.isTerminator = objMsg.?.isTerminator;
             newMessage.file = objMsg.?.file;
-            newMessage.line = objMsg.?.line;
-            newMessage.position = objMsg.?.position;
+            if (objMsg.?.line != null) {
+                newMessage.line = objMsg.?.line;
+            }
+            if (objMsg.?.position != null) {
+                newMessage.position = objMsg.?.position;
+            }
         }
-        var newMessageData: IokeData = IokeData{
-            .Message = &newMessage,
+        var newMessageData = obj.runtime.allocator.create(IokeData) catch unreachable;
+        newMessageData.* = IokeData{
+            .Message = newMessage,
         };
-        return &newMessageData;
+        return newMessageData;
     }
-
 
     pub fn setNext(self: *Self, next_: ?*IokeObject) void {
         self.next = next_;
@@ -190,7 +192,7 @@ pub const Message = struct {
 
     // @static
     pub fn wrap1(cachedResult: *IokeObject) *Message {
-        var cacheAsMsg = IokeData{.IokeObject = cachedResult};
+        var cacheAsMsg = IokeData{ .IokeObject = cachedResult };
         return Message.wrap3("cachedResult"[0..], &cacheAsMsg, cachedResult.runtime);
     }
 
@@ -205,7 +207,10 @@ pub const Message = struct {
     }
 
     pub fn newFromStreamStatic(runtime: *Runtime, iterator: StringIterator, message: *IokeObject, context: *IokeObject) *IokeObject {
-        var parser = IokeParser{
+        var parser = runtime.allocator.create(IokeParser) catch unreachable;
+        defer runtime.allocator.destroy(parser);
+
+        parser.* = IokeParser{
             .allocator = runtime.allocator,
             .context = context,
             .message = message,
@@ -219,14 +224,15 @@ pub const Message = struct {
         // };
         var maybeObj = parser.parseFully();
         if (maybeObj != null) {
-            var mx = Message{
+            var mx = runtime.allocator.create(Message) catch unreachable;
+            mx.* = Message{
                 .runtime = runtime,
                 .name = "."[0..],
                 .isTerminator = true,
                 .line = 0,
                 .position = 0,
             };
-            return runtime.createMessage(&mx);
+            return runtime.createMessage(mx);
         } else {
             return maybeObj.?;
         }
@@ -268,18 +274,17 @@ pub const Message = struct {
 
         // currentCode(base);
 
-        if(self.next != null) {
-            if(!self.isTerminator) {
-                std.fmt.format(writer, " " , .{} ) catch unreachable;
+        if (self.next != null) {
+            if (!self.isTerminator) {
+                std.fmt.format(writer, " ", .{}) catch unreachable;
             }
-            std.fmt.format(writer, "{}" , .{self.next.?.code()} ) catch unreachable;
+            std.fmt.format(writer, "{}", .{self.next.?.code()}) catch unreachable;
             // base.append(Message.code(next));
         }
 
         return fbs.getWritten();
     }
 };
-
 
 // Tests
 const expect = std.testing.expect;

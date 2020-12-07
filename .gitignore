@@ -2,3 +2,5 @@ zig-cache
 *.wasm
 *#
 *.bak
+vgcore.*
+main

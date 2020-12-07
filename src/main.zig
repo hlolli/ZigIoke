@@ -21,27 +21,29 @@ pub fn main() void {
     var stringBuf = Utf8View.init(&buf) catch unreachable;
     var iterator = stringBuf.iterator();
     var interpreter: Interpreter = Interpreter{};
-    var runtime: Runtime = Runtime{
+    var runtime = allocator.create(Runtime) catch unreachable;
+    // errdefer allocator.destroy(runtime);
+
+    runtime.* = Runtime{
         .allocator = allocator,
         .interpreter = &interpreter,
     };
-    std.log.info("\n nil0 {*}\n", .{&runtime});
-    std.log.info("\n allocator! {*}\n", .{&allocator});
-    runtime.init();
+    // std.log.info("\n nil0 {*}\n", .{&runtime});
+    // std.log.info("\n allocator! {*}\n", .{&allocator});
+    runtime = runtime.init();
 
+    std.log.info("SELFMSGBODYFLAGS 11 {}\n", .{runtime.message.?.body.flags});
     // root context
     const context = runtime.ground.?;
 
     // root message
     var mx = Message{
-        .runtime = &runtime,
+        .runtime = runtime,
         .name = "."[0..],
         .isTerminator = true,
     };
-
     mx.setLine(0);
     mx.setPosition(0);
-
     var message = runtime.createMessage(&mx);
 
     var ret = runtime.evaluateStream(iterator, message, context);
@@ -51,6 +53,6 @@ pub fn main() void {
     std.log.info("\nAll your codebase are belong to us.\n", .{});
     // var readline = Readline{.allocator = allocator};
     // _ = readline.readline();
-    defer runtime.deinit();
+    // defer runtime.deinit();
     // defer fixed_buf_alloc.deinit();
 }

@@ -6,7 +6,6 @@ const gnu_readline = @cImport({
     @cInclude("readline/readline.h");
 });
 
-
 pub const Readline = struct {
     const Self = @This();
     allocator: *Allocator,
@@ -16,9 +15,7 @@ pub const Readline = struct {
         // var x = gnu_readline.readline(">> ");
         // std.mem.free(x);
         // std.log.err("\n TYPE? {} \n", .{x});
-        while(gnu_readline.readline(">> ").* > 0) {
-
-        }
+        while (gnu_readline.readline(">> ").* > 0) {}
         return true;
         // while (self.buffer != null) {
         //     if (self.buffer.count() > 0) {

@@ -19,13 +19,12 @@ pub const Body = struct {
     mimicCount: u32 = 0,
     flags: u8 = 0,
     hooks: ?*ArrayList(*IokeObject) = null,
-    cells: ?*AutoHashMap([]const u8, *Cell) = null,
+    cells: ?AutoHashMap([]const u8, *Cell) = null,
     count: u16 = 0,
     firstAdded: ?*Cell = null,
     lastAdded: ?*Cell = null,
 
-    pub fn deinit(self: *Self) void { }
-
+    pub fn deinit(self: *Self) void {}
 
     pub fn put(self: *Self, name: []const u8, value: *IokeData) void {
         var cell = self.getCell(name, false);
@@ -33,13 +32,13 @@ pub const Body = struct {
     }
 
     fn getCell(self: *Self, name: []const u8, query: bool) *Cell {
-        if(self.cells == null and query == true) {
+        if (self.cells == null and query) {
             return self.createCell(name);
         }
 
-        var maybeCell = if (self.cells != null) self.cells.?.getEntry(name) else null;
+        var maybeCell = if (self.cells != null) self.cells.?.get(name) else null;
         if (maybeCell != null) {
-            return maybeCell.?.value;
+            return maybeCell.?;
         } else {
             return self.createCell(name);
         }
@@ -51,20 +50,20 @@ pub const Body = struct {
 
     fn createCell(self: *Self, name: []const u8) *Cell {
         if (self.count == 0) {
-            var newCells = AutoHashMap([]const u8, *Cell).init(self.allocator);
-            self.cells = &newCells;
+            self.cells = AutoHashMap([]const u8, *Cell).init(self.allocator);
+            // self.cells = &newCells;
         }
 
-        var newCell: Cell = Cell{.name = name};
+        var newCell: Cell = Cell{ .name = name };
 
         self.count += 1;
 
-        if(self.lastAdded != null) {
+        if (self.lastAdded != null) {
             // TODO segfault fix
             // self.lastAdded.?.*.orderedNext = &newCell;
         }
 
-        if(self.firstAdded == null) {
+        if (self.firstAdded == null) {
             self.firstAdded = &newCell;
         }
 

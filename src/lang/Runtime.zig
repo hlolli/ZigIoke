@@ -26,7 +26,7 @@ pub fn getNextId_() u32 {
 pub const Runtime = struct {
     const Self = @This();
     pub const id = getNextId_();
-    symbolTable: ?AutoHashMap([]const u8, IokeObject) = null,
+    symbolTable: ?AutoHashMap([]const u8, *IokeObject) = null,
 
     allocator: *Allocator,
     interpreter: *Interpreter,
@@ -160,38 +160,35 @@ pub const Runtime = struct {
     }
 
     pub fn newMessage(self: *Self, name: []const u8) *IokeObject {
-        var newMsg = Message{.runtime = self, .name = name};
+        var newMsg = Message{ .runtime = self, .name = name };
         return self.createMessage(&newMsg);
     }
 
     pub fn createMessage(self: *Self, m: *Message) *IokeObject {
-        var _newMessageBody = Body{.allocator = self.allocator};
-        var iokeData: IokeData = IokeData{
-            .Message = m,
-        };
-        var newMessageObj = IokeObject{
+        var messageData = self.allocator.create(IokeData) catch unreachable;
+        messageData.* = IokeData{ .Message = m };
+
+        var _messageBody = self.allocator.create(Body) catch unreachable;
+        _messageBody.* = Body{ .allocator = self.allocator };
+        var _newMessage = self.allocator.create(IokeObject) catch unreachable;
+        _newMessage.* = IokeObject{
+            .data = messageData,
+            .body = _messageBody,
             .runtime = self,
-            .body = &_newMessageBody,
-            .documentation = self.message.?.documentation,
-            .data = &iokeData,
+            .documentation = "A Message is the basic code unit in Ioke."[0..],
         };
-        // @memcpy(noalias dest: [*]u8, noalias source: [*]const u8, byte_count: usize);
-        // var _nullobj: ?*IokeObject = null;
-        // var objCopy: ?IokeObject = null;
-        // @memcpy(objCopy, self.message.?, @sizeOf(IokeObject));
-        // var objCopy = self.message.?.allocateCopy(_nullobj, _nullobj);
-        // var objCopy = self.message.?.allocateCopy(_nullobj, _nullobj);
-        std.log.info("0mimic__{*}\n", .{self.message.?.body});
-        newMessageObj.singleMimicsWithoutCheck(self.message.?);
-        // objCopy.setData(&iokeData);
-        return &newMessageObj;
+        _newMessage.singleMimicsWithoutCheck(self.message.?);
+        return _newMessage;
     }
 
     pub fn newText(self: *Self, text_: []const u8) *IokeObject {
+        if (self.text == null) {
+            std.log.err("New text called before text exists{}\n", .{text_});
+        }
         var objCopy: IokeObject = self.text.?.*;
         objCopy.singleMimicsWithoutCheck(self.text.?);
-        var newText_ = Text{.text = text_};
-        var newData_ = IokeData {.Text = &newText_};
+        var newText_ = Text{ .text = text_ };
+        var newData_ = IokeData{ .Text = &newText_ };
         objCopy.setData(&newData_);
         return &objCopy;
     }
@@ -206,26 +203,25 @@ pub const Runtime = struct {
         return self.interpreter.evaluate(parsedObj, self.ground.?, self.ground.?, null);
     }
 
-
     pub fn getSymbol(self: *Self, name_: []const u8) *IokeObject {
         var maybeSymbol = self.symbolTable.?.get(name_);
         if (maybeSymbol == null) {
-            var _symbolObj = Symbol{.text = name_};
-            var _symbolData = IokeData {.Symbol = &_symbolObj};
-            var _symbolBody = Body{.allocator = self.allocator};
-            maybeSymbol = IokeObject{
+            var _symbolObj = Symbol{ .text = name_ };
+            var _symbolData = IokeData{ .Symbol = &_symbolObj };
+            var _symbolBody = Body{ .allocator = self.allocator };
+            var _newSymbol = IokeObject{
                 .body = &_symbolBody,
                 .runtime = self,
                 .data = &_symbolData,
             };
+            maybeSymbol = &_newSymbol;
             maybeSymbol.?.singleMimicsWithoutCheck(self.symbol.?);
             self.symbolTable.?.put(name_, maybeSymbol.?) catch unreachable;
         }
-        return &maybeSymbol.?;
+        return maybeSymbol.?;
     }
 
     pub fn deinit(self: *Self) void {
-
         if (self.symbolTable != null) {
             self.symbolTable.?.deinit();
             self.symbolTable = null;
@@ -297,278 +293,323 @@ pub const Runtime = struct {
         }
     }
 
-    pub fn init(self: *Self) void {
-        self.symbolTable = AutoHashMap([]const u8, IokeObject).init(self.allocator);
+    pub fn init(self: *Self) *Self {
+        self.symbolTable = AutoHashMap([]const u8, *IokeObject).init(self.allocator);
 
-        var none = IokeData{.None = IokeDataTag.None};
-        self.none = &none;
+        var none = self.allocator.create(IokeData) catch unreachable;
+        none.* = IokeData{ .None = IokeDataTag.None };
+        self.none = none;
 
-        var groundBody = Body{.allocator = self.allocator};
-        var newGround = IokeObject{
-            .data = &none,
-            .body = &groundBody,
+        var groundBody = self.allocator.create(Body) catch unreachable;
+        groundBody.* = Body{ .allocator = self.allocator };
+        var newGround = self.allocator.create(IokeObject) catch unreachable;
+        newGround.* = IokeObject{
+            .data = none,
+            .body = groundBody,
             .runtime = self,
             .documentation = "Ground is the default place code is evaluated in."[0..],
         };
 
-        self.ground = &newGround;
+        self.ground = newGround;
         // self.ground.?.init();
 
-        var nulBody = Body{.allocator = self.allocator};
-        var newNul = IokeObject{
-            .data = &none,
-            .body = &nulBody,
+        var nulBody = self.allocator.create(Body) catch unreachable;
+        nulBody.* = Body{ .allocator = self.allocator };
+        var newNul = self.allocator.create(IokeObject) catch unreachable;
+        newNul.* = IokeObject{
+            .data = none,
+            .body = nulBody,
             .runtime = self,
             .documentation = "NOT TO BE EXPOSED TO Ioke - used for internal usage only",
         };
-        self.nul = &newNul;
+        self.nul = newNul;
         // self.nul.?.init();
 
-        var messageMsg: Message = Message{
+        var messageMsg = self.allocator.create(Message) catch unreachable;
+        messageMsg.* = Message{
             .runtime = self,
-            .name = ""[0..]
+            .name = ""[0..],
         };
 
-        var messageData: IokeData = IokeData{
-            .Message = &messageMsg
-        };
+        var messageData = self.allocator.create(IokeData) catch unreachable;
+        messageData.* = IokeData{ .Message = messageMsg };
 
-        var _messageBody = Body{.allocator = self.allocator};
-        var _newMessage = IokeObject{
-            .data = &messageData,
-            .body = &_messageBody,
+        var _messageBody = self.allocator.create(Body) catch unreachable;
+        _messageBody.* = Body{ .allocator = self.allocator };
+        var _newMessage = self.allocator.create(IokeObject) catch unreachable;
+        _newMessage.* = IokeObject{
+            .data = messageData,
+            .body = _messageBody,
             .runtime = self,
             .documentation = "A Message is the basic code unit in Ioke."[0..],
         };
-        self.message = &_newMessage;
+        self.message = _newMessage;
         // self.message.?.init();
 
-        var _baseBody = Body{.allocator = self.allocator};
-        var newBase = IokeObject{
-            .data = &none,
-            .body = &_baseBody,
+        var _baseBody = self.allocator.create(Body) catch unreachable;
+        _baseBody.* = Body{ .allocator = self.allocator };
+        var newBase = self.allocator.create(IokeObject) catch unreachable;
+        newBase.* = IokeObject{
+            .data = none,
+            .body = _baseBody,
             .runtime = self,
-            .documentation = (
-                "Base is the top of the inheritance structure. " ++
-                    "Most of the objects in the system are derived from this instance. " ++
-                    "Base should keep its cells to the bare minimum needed for the system.")[0..],
+            .documentation = ("Base is the top of the inheritance structure. " ++
+                "Most of the objects in the system are derived from this instance. " ++
+                "Base should keep its cells to the bare minimum needed for the system.")[0..],
         };
-        self.base = &newBase;
+        self.base = newBase;
         // self.base.?.init();
 
-        var _iokeGroundBody = Body{.allocator = self.allocator};
-        var newIokeGround = IokeObject{
-            .data = &none,
-            .body = &_iokeGroundBody,
+        var _iokeGroundBody = self.allocator.create(Body) catch unreachable;
+        _iokeGroundBody.* = Body{ .allocator = self.allocator };
+        var newIokeGround = self.allocator.create(IokeObject) catch unreachable;
+        newIokeGround.* = IokeObject{
+            .data = none,
+            .body = _iokeGroundBody,
             .runtime = self,
             .documentation = "IokeGround is the place that mimics default behavior, and where most global objects are defined.."[0..],
         };
-        self.iokeGround = &newIokeGround;
+        self.iokeGround = newIokeGround;
         // self.iokeGround.?.init();
 
-        var _conditionBody = Body{.allocator = self.allocator};
-        var newCondition = IokeObject{
-            .data = &none,
-            .body = &_conditionBody,
+        var _conditionBody = self.allocator.create(Body) catch unreachable;
+        _conditionBody.* = Body{ .allocator = self.allocator };
+        var newCondition = self.allocator.create(IokeObject) catch unreachable;
+        newCondition.* = IokeObject{
+            .data = none,
+            .body = _conditionBody,
             .runtime = self,
             .documentation = "The root mimic of all the conditions in the system."[0..],
         };
-        self.condition = &newCondition;
+        self.condition = newCondition;
         // self.condition.?.init();
 
-        var _localsBody = Body{.allocator = self.allocator};
-        var newLocals = IokeObject{
-            .data = &none,
-            .body = &_localsBody,
+        var _localsBody = self.allocator.create(Body) catch unreachable;
+        _localsBody.* = Body{ .allocator = self.allocator };
+        var newLocals = self.allocator.create(IokeObject) catch unreachable;
+        newLocals.* = IokeObject{
+            .data = none,
+            .body = _localsBody,
             .runtime = self,
             .documentation = "Contains all the locals for a specific invocation."[0..],
         };
-        self.locals = &newLocals;
+        self.locals = newLocals;
 
         // TODO missing IokeSystem in .data
-        var _systemBody = Body{.allocator = self.allocator};
-        var newSystem = IokeObject{
-            .data = &none,
-            .body = &_systemBody,
+        var _systemBody = self.allocator.create(Body) catch unreachable;
+        _systemBody.* = Body{ .allocator = self.allocator };
+        var newSystem = self.allocator.create(IokeObject) catch unreachable;
+        newSystem.* = IokeObject{
+            .data = none,
+            .body = _systemBody,
             .runtime = self,
             .documentation = "System defines things that represents the currently running system, such as the load path."[0..],
         };
-        self.system = &newSystem;
+        self.system = newSystem;
         // self.system.?.init();
 
         // nil needs to be initialized before text
-        var nilBody = Body{
+        var nilBody = self.allocator.create(Body) catch unreachable;
+        nilBody.* = Body{
             .allocator = self.allocator,
             .flags = IokeObjectNS.NIL_F | IokeObjectNS.FALSY_F,
         };
 
-        var nilObj = IokeObject{
-            .data = &none,
+        var nilObj = self.allocator.create(IokeObject) catch unreachable;
+        nilObj.* = IokeObject{
+            .data = none,
             .runtime = self,
-            .body = &nilBody,
+            .body = nilBody,
             .toString = "nil"[0..],
         };
         // nilObj.init();
 
         std.log.info("\n ground ptr {*}\n", .{self.ground.?.runtime});
-        var nilData = IokeData{
-            .Nil = &nilObj,
+        var nilData = self.allocator.create(IokeData) catch unreachable;
+        nilData.* = IokeData{
+            .Nil = nilObj,
         };
 
-        var _nilBody = Body{.allocator = self.allocator};
-        var newNil = IokeObject{
-            .data = &nilData,
-            .body = &_nilBody,
+        var _nilBody = self.allocator.create(Body) catch unreachable;
+        _nilBody.* = Body{ .allocator = self.allocator };
+        var newNil = self.allocator.create(IokeObject) catch unreachable;
+        newNil.* = IokeObject{
+            .data = nilData,
+            .body = _nilBody,
             .runtime = self,
             .documentation = "nil is an oddball object that always represents itself. It can not be mimicked and (alongside false) is one of the two false values."[0..],
         };
-        self.nil = &newNil;
+        self.nil = newNil;
         // self.nil.?.*.init();
 
         // Needs to be initialized early for
         // setKind to work without null checks
-        var _textBody = Body{.allocator = self.allocator};
-        var _textObj = Text{.text = ""[0..]};
-        var _textData = IokeData {.Text = &_textObj};
+        var _textEmptyStr = ""[0..];
+        var _textBody = self.allocator.create(Body) catch unreachable;
+        _textBody.* = Body{ .allocator = self.allocator };
+        var _textObj = self.allocator.create(Text) catch unreachable;
+        _textObj.* = Text{ .text = _textEmptyStr };
+        var _textData = self.allocator.create(IokeData) catch unreachable;
+        _textData.* = IokeData{ .Text = _textObj };
 
-        var _newText = IokeObject{
-            .data = &_textData,
-            .body = &_textBody,
+        var _newText = self.allocator.create(IokeObject) catch unreachable;
+        _newText.* = IokeObject{
+            .data = _textData,
+            .body = _textBody,
             .runtime = self,
             .documentation = "Contains an immutable piece of text."[0..],
         };
-        self.text = &_newText;
+        self.text = _newText;
         // self.text.?.init();
 
-        // setKind can be called now
-        var nilKindStr = "nil"[0..];
-        nilObj.setKind(nilKindStr);
-
-        var runtimeData: IokeData = IokeData{
-            .Runtime = self
-        };
-        var _runtimeBody = Body{.allocator = self.allocator};
-        var newRuntime = IokeObject{
-            .body = &_runtimeBody,
+        var runtimeData = self.allocator.create(IokeData) catch unreachable;
+        runtimeData.* = IokeData{ .Runtime = self };
+        var _runtimeBody = self.allocator.create(Body) catch unreachable;
+        _runtimeBody.* = Body{ .allocator = self.allocator };
+        var newRuntime = self.allocator.create(IokeObject) catch unreachable;
+        newRuntime.* = IokeObject{
+            .body = _runtimeBody,
             .runtime = self,
             .documentation = "Runtime gives meta-circular access to the currently executing Ioke runtime."[0..],
-            .data = &runtimeData,
+            .data = runtimeData,
         };
-        self.runtime = &newRuntime;
+        self.runtime = newRuntime;
         // self.runtime.?.init();
 
-
-        var _defaultBehaviorBody = Body{.allocator = self.allocator};
-        var newDefaultBehavior = IokeObject{
-            .data = &none,
-            .body = &_defaultBehaviorBody,
+        var _defaultBehaviorBody = self.allocator.create(Body) catch unreachable;
+        _defaultBehaviorBody.* = Body{ .allocator = self.allocator };
+        var newDefaultBehavior = self.allocator.create(IokeObject) catch unreachable;
+        newDefaultBehavior.* = IokeObject{
+            .data = none,
+            .body = _defaultBehaviorBody,
             .runtime = self,
             .documentation = "DefaultBehavior is a mixin that provides most of the methods shared by most instances in the system."[0..],
         };
-        self.defaultBehavior = &newDefaultBehavior;
+        self.defaultBehavior = newDefaultBehavior;
         // self.defaultBehavior.?.init();
 
-
-        var _originBody = Body{.allocator = self.allocator};
-        var newOrigin = IokeObject{
-            .data = &none,
-            .body = &_originBody,
+        var _originBody = self.allocator.create(Body) catch unreachable;
+        _originBody.* = Body{ .allocator = self.allocator };
+        var newOrigin = self.allocator.create(IokeObject) catch unreachable;
+        newOrigin.* = IokeObject{
+            .data = none,
+            .body = _originBody,
             .runtime = self,
             .documentation = "Any object created from scratch should usually be derived from Origin."[0..],
         };
-        self.origin = &newOrigin;
+        self.origin = newOrigin;
         // self.origin.?.init();
 
         // std.log.info("\n nil1 {} {*}\n", .{self.nil == null, self});
         // std.log.info("\n nil1 {}\n", .{self.nil == null});
-        var _trueBody = Body{.allocator = self.allocator};
-        var _trueObj = IokeObject{
-            .data = &none,
-            .body = &_trueBody,
+        var _trueBody = self.allocator.create(Body) catch unreachable;
+        _trueBody.* = Body{ .allocator = self.allocator };
+        var _trueObj = self.allocator.create(IokeObject) catch unreachable;
+        _trueObj.* = IokeObject{
+            .data = none,
+            .body = _trueBody,
             .runtime = self,
             .toString = "true"[0..],
         };
 
         // _trueObj.init();
 
-        _trueObj.setKind("true"[0..]);
-
-        var _trueData = IokeData{
-            .True = &_trueObj,
+        var _trueData = self.allocator.create(IokeData) catch unreachable;
+        _trueData.* = IokeData{
+            .True = _trueObj,
         };
-
-        var __trueBody = Body{.allocator = self.allocator};
-        var newTrue = IokeObject{
-            .body = &__trueBody,
+        var __trueBody = self.allocator.create(Body) catch unreachable;
+        __trueBody.* = Body{ .allocator = self.allocator };
+        var newTrue = self.allocator.create(IokeObject) catch unreachable;
+        newTrue.* = IokeObject{
+            .body = __trueBody,
             .runtime = self,
             .documentation = "true is an oddball object that always represents itself. It can not be mimicked and represents the a true value."[0..],
-            .data = &_trueData,
+            .data = _trueData,
         };
-        self._true = &newTrue;
+        self._true = newTrue;
         // self._true.?.init();
 
-        var _falseBody = Body{
+        var _falseBody = self.allocator.create(Body) catch unreachable;
+        _falseBody.* = Body{
             .allocator = self.allocator,
             .flags = IokeObjectNS.FALSY_F,
         };
 
-        var _falseObj = IokeObject{
-            .data = &none,
-            .body = &_falseBody,
+        var _falseObj = self.allocator.create(IokeObject) catch unreachable;
+        _falseObj.* = IokeObject{
+            .data = none,
+            .body = _falseBody,
             .runtime = self,
-            .toString = "false"[0..]
+            .toString = "false"[0..],
         };
         // _falseObj.init();
 
-        _falseObj.setKind("false"[0..]);
-
-        var _falseData = IokeData{
-            .False = &_falseObj,
+        var _falseData = self.allocator.create(IokeData) catch unreachable;
+        _falseData.* = IokeData{
+            .False = _falseObj,
         };
 
-        var __falseBody = Body{.allocator = self.allocator};
-        var newFalse = IokeObject{
-            .body = &__falseBody,
+        var __falseBody = self.allocator.create(Body) catch unreachable;
+        __falseBody.* = Body{ .allocator = self.allocator };
+        var newFalse = self.allocator.create(IokeObject) catch unreachable;
+        newFalse.* = IokeObject{
+            .body = __falseBody,
             .runtime = self,
             .documentation = "false is an oddball object that always represents itself. It can not be mimicked and (alongside nil) is one of the two false values."[0..],
-            .data = &_falseData,
+            .data = _falseData,
         };
-        self._false = &newFalse;
+        self._false = newFalse;
         // self._false.?.init();
 
-        var _symbolObj = Symbol{.text = ""[0..]};
-        var _symbolData = IokeData {.Symbol = &_symbolObj};
+        var _symbolObj = self.allocator.create(Symbol) catch unreachable;
+        _symbolObj.* = Symbol{ .text = ""[0..] };
+        var _symbolData = self.allocator.create(IokeData) catch unreachable;
+        _symbolData.* = IokeData{ .Symbol = _symbolObj };
 
-        var _symbolBody = Body{.allocator = self.allocator};
-        var _newSymbol = IokeObject{
-            .body = &_symbolBody,
+        var _symbolBody = self.allocator.create(Body) catch unreachable;
+        _symbolBody.* = Body{ .allocator = self.allocator };
+        var _newSymbol = self.allocator.create(IokeObject) catch unreachable;
+        _newSymbol.* = IokeObject{
+            .body = _symbolBody,
             .runtime = self,
             .documentation = "Represents a symbol - an object that always represents itself."[0..],
-            .data = &_symbolData,
+            .data = _symbolData,
         };
-        self.symbol = &_newSymbol;
+        self.symbol = _newSymbol;
         // self.symbol.?.init();
 
-        var _lexicalCtx = LexicalContext{
+        var _lexicalCtx = self.allocator.create(LexicalContext) catch unreachable;
+        _lexicalCtx.* = LexicalContext{
             .ground = self.ground.?.getRealContext(),
-            .surroundingContext = self.ground.?
+            .surroundingContext = self.ground.?,
         };
-        var _lexicalCtxData = IokeData {.LexicalContext = &_lexicalCtx};
+        var _lexicalCtxData = self.allocator.create(IokeData) catch unreachable;
+        _lexicalCtxData.* = IokeData{ .LexicalContext = _lexicalCtx };
 
-        var _lexicalContextBody = Body{.allocator = self.allocator};
-        var _newLexicalContext = IokeObject{
-            .body = &_lexicalContextBody,
+        var _lexicalContextBody = self.allocator.create(Body) catch unreachable;
+        _lexicalContextBody.* = Body{ .allocator = self.allocator };
+        var _newLexicalContext = self.allocator.create(IokeObject) catch unreachable;
+        _newLexicalContext.* = IokeObject{
+            .body = _lexicalContextBody,
             .runtime = self,
             .documentation = "A lexical activation context."[0..],
-            .data = &_lexicalCtxData,
+            .data = _lexicalCtxData,
         };
-        self.lexicalContext = &_newLexicalContext;
+        self.lexicalContext = _newLexicalContext;
         // self.lexicalContext.?.init();
+
+        std.log.info("runtime init: setting kinds\n", .{});
+        // setKind can be called now
+        var nilKindStr = "nil"[0..];
+        nilObj.setKind(nilKindStr);
+        _trueObj.setKind("true"[0..]);
+        _falseObj.setKind("false"[0..]);
 
         // MESSAGES
         self.isApplicableMessage = self.newMessage("applicable?"[0..]);
         std.log.info("self message null end of init\n", .{});
-
+        return self;
     }
 
     // pub fn newStatic() { }
