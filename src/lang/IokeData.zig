@@ -1,11 +1,15 @@
-const panic = @import("std").debug.panic;
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const panic = std.debug.panic;
 const DefaultMethod = @import("./DefaultMethod.zig").DefaultMethod;
 const Method = @import("./Method.zig").Method;
 const IokeObject = @import("./IokeObject.zig").IokeObject;
 const IokeParser = @import("./parser/IokeParser.zig").IokeParser;
-// const AssociatedCode = @import("./AssociatedCode.zig").AssociatedCode;
+const IokeString = @import("./IokeString.zig").IokeString;
+const Level = @import("./parser/Level.zig").Level;
 const LexicalContext = @import("./LexicalContext.zig").LexicalContext;
 const Message = @import("./Message.zig").Message;
+const Number = @import("./Number.zig").Number;
 const Runtime = @import("./Runtime.zig").Runtime;
 const Symbol = @import("./Symbol.zig").Symbol;
 const Text = @import("./Text.zig").Text;
@@ -19,7 +23,6 @@ pub const IokeDataTag = enum {
     Nil,
     False,
     True,
-    // AssociatedCode,
     DefaultMethod,
     Method,
     IokeObject,
@@ -29,6 +32,9 @@ pub const IokeDataTag = enum {
     Runtime,
     Symbol,
     Text,
+    Level,
+    Internal,
+    Number,
 };
 
 pub const IokeData = union(IokeDataTag) {
@@ -36,7 +42,6 @@ pub const IokeData = union(IokeDataTag) {
     Nil: ?*IokeObject,
     False: ?*IokeObject,
     True: ?*IokeObject,
-    // AssociatedCode: ?*AssociatedCode,
     DefaultMethod: ?*DefaultMethod,
     Method: ?*Method,
     IokeObject: ?*IokeObject,
@@ -46,6 +51,9 @@ pub const IokeData = union(IokeDataTag) {
     Runtime: ?*Runtime,
     Symbol: ?*Symbol,
     Text: ?*Text,
+    Level: ?*Level,
+    Internal: ?*IokeString,
+    Number: ?*Number,
 };
 
 fn maybeObject(iokeData: *IokeData) ?*IokeObject {
@@ -204,46 +212,94 @@ pub const IokeDataHelpers = struct {
         }
     }
 
-    pub fn toString(iokeData: *IokeData) []const u8 {
-        var buf: [256]u8 = undefined;
-        var fbs = std.io.fixedBufferStream(&buf);
-        const writer = fbs.writer();
-
+    pub fn toString(allocator: *Allocator, iokeData: *IokeData) []const u8 {
+        // const buf: []u8 = allocator.alloc(u8, 256) catch unreachable;
+        // var buf: [256]u8 = undefined;
+        // var fbs = std.io.fixedBufferStream(buf);
+        // var writer = fbs.writer();
+        var string = IokeString.init(allocator);
+        var string_writer = string.writer();
         switch (iokeData.*) {
             IokeDataTag.IokeObject => {
                 if (iokeData.IokeObject.?.*.toString != null) {
-                    std.fmt.format(writer, "#<{}:{*}>", .{ iokeData.IokeObject.?.*.toString.?, iokeData.IokeObject.? }) catch unreachable;
+                    std.fmt.format(string_writer, "#<{}:{*}>", .{ iokeData.IokeObject.?.*.toString.?, iokeData.IokeObject.? }) catch unreachable;
                 } else if (iokeData.IokeObject.?.*.isNil()) {
-                    std.fmt.format(writer, "#<nul:{*}>", .{iokeData.IokeObject.?}) catch unreachable;
+                    std.fmt.format(string_writer, "#<nul:{*}>", .{iokeData.IokeObject.?}) catch unreachable;
                 } else {
-                    std.fmt.format(writer, "#<object:{*}>", .{iokeData.IokeObject.?}) catch unreachable;
+                    std.fmt.format(string_writer, "#<object:{*}>", .{iokeData.IokeObject.?}) catch unreachable;
                 }
             },
             IokeDataTag.Message => {
-                std.fmt.format(writer, "{}", .{iokeData.Message.?.*.code()}) catch unreachable;
+                string.appendBytes(iokeData.Message.?.*.code());
             },
             IokeDataTag.Text => {
-                std.fmt.format(writer, "{}", .{iokeData.Text.?.*.text}) catch unreachable;
+                string.appendBytes(iokeData.Text.?.*.text);
             },
             IokeDataTag.Symbol => {
-                std.fmt.format(writer, "{}", .{iokeData.Symbol.?.*.text}) catch unreachable;
+                string.appendBytes(iokeData.Symbol.?.*.text);
             },
+            IokeDataTag.Nil => {
+                // std.fmt.format(string_writer, "#<nul:{*}>", .{iokeData.Nil.?}) catch unreachable;
+                string.appendBytes("nul"[0..]);
+            },
+            IokeDataTag.None => {
+                // std.fmt.format(string_writer, "#<nul:{*}>", .{iokeData.None.?}) catch unreachable;
+                string.appendBytes("nul"[0..]);
+            },
+            IokeDataTag.False => {
+                string.appendBytes("false"[0..]);
+            },
+            IokeDataTag.True => {
+                string.appendBytes("true"[0..]);
+            },
+            IokeDataTag.DefaultMethod => {
+                std.fmt.format(string_writer, "#<method:{*}>", .{iokeData.DefaultMethod.?}) catch unreachable;
+            },
+            IokeDataTag.Method => {
+                std.fmt.format(string_writer, "#<method:{*}>", .{iokeData.Method.?}) catch unreachable;
+            },
+            // IokeParser,
+            // LexicalContext,
+            // Message,
+            // Runtime,
+            // Symbol,
+            // Text,
+            // Level,
             IokeDataTag.Level => {
-                std.fmt.format(writer, "Level<{}, {}, {}, {}>", .{
-                    iokeData.Level.?.*.precedence,
-                    iokeData.Level.?.*.operatorMessage,
-                    iokeData.Level.?.*.type,
-                    iokeData.Level.?.*.parent,
+                var typeStr = switch(iokeData.Level.?.type) {
+                    Level.Type.REGULAR => "regular"[0..],
+                    Level.Type.UNARY => "unary"[0..],
+                    Level.Type.ASSIGNMENT => "assignment"[0..],
+                    Level.Type.INVERTED => "inverted"[0..],
+                };
+                std.fmt.format(string_writer, "Level<{}, {}, {}, {}>", .{
+                    iokeData.Level.?.precedence,
+                    // "USE THAT ONE BELOW"[0..],
+                    // if (iokeData.Level.?.operatorMessage != null) IokeDataHelpers.toString(allocator, IokeData{.IokeObject=iokeData.Level.?.operatorMessage.?}) else "nul"[0..],
+                    "nul"[0..],
+                    typeStr,
+                    // "USE THAT ONE BELOW"[0..],
+                    // if (iokeData.Level.?.parent != null) IokeDataHelpers.toString(allocator, iokeData.Level.?.parent.?) else "nul"[0..],
+                    "nul"[0..],
                 }) catch unreachable;
             },
             IokeDataTag.LexicalContext => {
-                std.fmt.format(writer, "LexicalContext:{*}", .{iokeData.LexicalContext.?}) catch unreachable;
+                std.fmt.format(string_writer, "LexicalContext:{*}", .{iokeData.LexicalContext.?}) catch unreachable;
             },
             else => {
-                std.fmt.format(writer, "FIXME!!", .{}) catch unreachable;
+                // std.log.info("YES INDEED! {}", .{@TypeOf(string).Error});
+                // string.appendBytes("PLZFINDME"[0..]);
+                std.fmt.format(string_writer, "FIXME", .{}) catch unreachable;
+                // var x = s.getBytes();
+                // var u_ = fbs.write("nul"[0..]) catch unreachable;
+                // std.fmt.format(writer, "fix", .{}) catch unreachable;
             },
         }
-        return fbs.getWritten();
+        // string.read(&writer);
+        var ret = string.getBytes() catch unreachable;
+        return ret;
+        // TODO free the memory
+        // return fbs.getWritten();
     }
 };
 

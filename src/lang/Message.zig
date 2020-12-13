@@ -26,12 +26,12 @@ pub const Message = struct {
     line: ?u32 = null,
     position: ?u32 = null,
     isTerminator: bool = false,
-    cached: ?*IokeData = null,
+    cached: ?*IokeObject = null,
     next: ?*IokeObject = null,
     prev: ?*IokeObject = null,
     name: []const u8,
     file: []const u8 = "FIXME"[0..],
-    arguments: ?*ArrayList(*IokeObject) = null,
+    arguments: ?*ArrayList(*IokeData) = null,
     runtime: *Runtime,
 
     pub fn deinit(self: *Self) void {}
@@ -49,17 +49,19 @@ pub const Message = struct {
     //     return ret;
     // }
 
-    pub fn getArguments(self: *Self) ?*ArrayList(*IokeObject) {
+    pub fn getArguments(self: *Self) ?*ArrayList(*IokeData) {
         return self.arguments;
     }
 
-    pub fn setArguments(self: *Self, args: *ArrayList(*IokeObject)) void {
+    pub fn setArguments(self: *Self, args: *ArrayList(*IokeData)) void {
         self.arguments = args;
     }
 
-    pub fn appendArgument(self: *Self, arg: *IokeObject) void {
+    pub fn appendArgument(self: *Self, arg: *IokeData) void {
         if (self.arguments == null) {
-            self.arguments = &(ArrayList(*IokeObject).init(self.runtime.allocator));
+            var new_arguments = self.runtime.allocator.create(ArrayList(*IokeData)) catch unreachable;
+            new_arguments.* = ArrayList(*IokeData).init(self.runtime.allocator);
+            self.arguments = new_arguments;
         }
         self.arguments.?.append(arg) catch unreachable;
     }
@@ -86,8 +88,14 @@ pub const Message = struct {
             .runtime = obj.runtime,
             .name = if (self != null) self.?.name else emptyStr,
         };
+
         if (IokeDataHelpers.isMessage(obj.data)) {
-            newMessage.arguments = &(ArrayList(*IokeObject).init(obj.runtime.allocator));
+            var new_arguments = obj.runtime.allocator.create(ArrayList(*IokeData)) catch unreachable;
+            new_arguments.* = ArrayList(*IokeData).init(obj.runtime.allocator);
+            newMessage.arguments = new_arguments;
+            // newMessage.arguments = obj.runtime.allocator.create(ArrayList(*IokeData)) catch unreachable;
+            // newMessage.arguments.* = ArrayList(*IokeData).init(obj.runtime.allocator);
+            // newMessage.arguments = &(ArrayList(*IokeObject).init(obj.runtime.allocator));
             var objMsg = IokeDataHelpers.getMessage(obj.data);
 
             if (objMsg.?.arguments != null) {
@@ -116,12 +124,12 @@ pub const Message = struct {
 
     pub fn setNextOfLast(self: *Self, next_: ?*IokeObject) void {
         if (self.next != null) {
-            var next__ = IokeDataHelpers.getMessage(next_.?);
+            var next__ = IokeDataHelpers.getMessage(next_.?.data);
             if (next__ == null) {
                 std.log.err("Message.setNextOfLast failed: empty data\n", .{});
                 return;
             }
-            return next__.setNextOfLast(next_);
+            return next__.?.setNextOfLast(next_);
         } else {
             self.next = next_;
         }
@@ -164,7 +172,7 @@ pub const Message = struct {
     //     }
     // }
 
-    pub fn getNext(self: *Self) ?*IokeData {
+    pub fn getNext(self: *Self) ?*IokeObject {
         return self.next;
     }
 
@@ -177,7 +185,7 @@ pub const Message = struct {
     //     }
     // }
 
-    pub fn getPrev(self: *Self) ?*IokeData {
+    pub fn getPrev(self: *Self) ?*IokeObject {
         return self.prev;
     }
 
@@ -192,23 +200,24 @@ pub const Message = struct {
 
     // @static
     pub fn wrap1(cachedResult: *IokeObject) *Message {
-        var cacheAsMsg = IokeData{ .IokeObject = cachedResult };
-        return Message.wrap3("cachedResult"[0..], &cacheAsMsg, cachedResult.runtime);
+        // var cacheAsMsg = IokeData{ .IokeObject = cachedResult };
+        return Message.wrap3("cachedResult"[0..], cachedResult, cachedResult.runtime);
     }
 
     // @static
-    pub fn wrap3(name: []const u8, cachedResult: *IokeData, runtime: *Runtime) *Message {
-        var newMessage = Message{
+    pub fn wrap3(name: []const u8, cachedResult: *IokeObject, runtime: *Runtime) *Message {
+        var newMessage = runtime.allocator.create(Message) catch unreachable;
+        newMessage.* = Message{
             .runtime = runtime,
             .name = name,
         };
         newMessage.cached = cachedResult;
-        return &newMessage;
+        return newMessage;
     }
 
     pub fn newFromStreamStatic(runtime: *Runtime, iterator: StringIterator, message: *IokeObject, context: *IokeObject) *IokeObject {
         var parser = runtime.allocator.create(IokeParser) catch unreachable;
-        defer runtime.allocator.destroy(parser);
+        // defer runtime.allocator.destroy(parser);
 
         parser.* = IokeParser{
             .allocator = runtime.allocator,
@@ -223,7 +232,7 @@ pub const Message = struct {
         //     std.log.info("Parse error {}\n", .{err});
         // };
         var maybeObj = parser.parseFully();
-        if (maybeObj != null) {
+        if (maybeObj == null) {
             var mx = runtime.allocator.create(Message) catch unreachable;
             mx.* = Message{
                 .runtime = runtime,
@@ -278,7 +287,10 @@ pub const Message = struct {
             if (!self.isTerminator) {
                 std.fmt.format(writer, " ", .{}) catch unreachable;
             }
-            std.fmt.format(writer, "{}", .{self.next.?.code()}) catch unreachable;
+            var maybeNextMessage = IokeDataHelpers.getMessage(self.next.?.data);
+            if (maybeNextMessage != null) {
+                std.fmt.format(writer, "{}", .{maybeNextMessage.?.code()}) catch unreachable;
+            }
             // base.append(Message.code(next));
         }
 

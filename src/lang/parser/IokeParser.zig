@@ -12,9 +12,27 @@ const OperatorsNS = @import("./Operators.zig");
 // const OpArity = OperatorsNS.OpArity;
 const OpUnion = OperatorsNS.OpUnion;
 const Operators = OperatorsNS.Operators;
+const IokeData = @import("../IokeData.zig").IokeData;
 const IokeObject = @import("../IokeObject.zig").IokeObject;
+const IokeString = @import("../IokeString.zig").IokeString;
 const Message = @import("../Message.zig").Message;
 const Runtime = @import("../Runtime.zig").Runtime;
+
+const RANGES = [_][]const u8 {
+    ""[0..],
+    "."[0..],
+    ".."[0..],
+    "..."[0..],
+    "...."[0..],
+    "....."[0..],
+    "......"[0..],
+    "......."[0..],
+    "........"[0..],
+    "........."[0..],
+    ".........."[0..],
+    "..........."[0..],
+    "............"[0..]
+};
 
 pub const IokeParser = struct {
     allocator: *Allocator,
@@ -297,38 +315,47 @@ pub const IokeParser = struct {
     }
 
     pub fn parseFully(self: *Self) ?*IokeObject {
-        return self.parseMessageChain();
+        var res = self.parseMessageChain();
+        var ret = self.allocator.create(IokeObject) catch unreachable;
+        if (res != null) {
+            ret.* = res.?.*;
+        } else {
+            std.log.info("\n BAD BAD BAD\n", .{});
+        }
+        return ret;
     }
 
     fn parseMessageChain(self: *Self) ?*IokeObject {
         var newTop = self.allocator.create(ChainContext) catch unreachable;
-        if (self.top == null) {
-            newTop.* = ChainContext{.allocator = self.allocator};
-        } else {
-            newTop.* = ChainContext{.allocator = self.allocator, .parent = self.top};
-            // newTop.parent = self.top;
-            //     {
-                //         .allocator = self.allocator,
-            //     .parent = self.top,
-            // };
-        }
+        newTop.* = ChainContext{.allocator = self.allocator};
         newTop.init();
+        if (self.top != null) {
+            newTop.parent = self.top;
+        }
         self.top = newTop;
-        while (self.parseMessage()) {}
-
+        // std.log.info("\nself.top 1 {}\n ", .{self.top});
+        // std.log.info("\nself.top 2 {*}\n ", .{self.top});
+        while (self.parseMessage()) {
+            std.log.info("\nself.saved {}\n ", .{self.saved});
+        }
+        // std.log.info("\nself.top 3 {*}\n ", .{self.top});
         newTop.popOperatorsTo(999999);
+        // std.log.info("\nself.top 4 {}\n ", .{self.top});
         const retPtr = newTop.pop();
+        // std.log.info("\nself.top 5 {}\n ", .{self.top});
+        // std.log.info("\nself.top 6 {}\n ", .{retPtr});
 
         if (self.top.?.parent != null) {
             self.top = self.top.?.parent;
         }
-
+        // std.log.info("\nself.top 7 {}\n ", .{retPtr});
         return retPtr;
     }
 
     pub fn charDesc(self: *Self, c: i64) []u8 {
-        var buf: [12]u8 = undefined;
-        var fbs = std.io.fixedBufferStream(&buf);
+        const buf: []u8 = self.allocator.alloc(u8, 12) catch unreachable;
+        // var buf: [12]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(buf);
         const writer = fbs.writer();
 
         switch (c) {
@@ -351,7 +378,9 @@ pub const IokeParser = struct {
             var buf: [100]u8 = undefined;
             var fbs = std.io.fixedBufferStream(&buf);
             const writer = fbs.writer();
-            std.fmt.format(writer, "Expected: '{}' got: {}", .{ char, self.charDesc(rr) }) catch unreachable;
+            var charDesc_ = self.charDesc(rr);
+            defer self.allocator.free(charDesc_);
+            std.fmt.format(writer, "Expected: '{}' got: {}", .{([_]u8 {@intCast(u8, char) })[0..],  charDesc_ }) catch unreachable;
             self.parseFail(l, cc, fbs.getWritten());
         }
     }
@@ -391,7 +420,7 @@ pub const IokeParser = struct {
                     };
 
                     var mx = self.runtime.createMessage(m);
-
+                    std.log.info("RR operator {} \n", .{([_]u8 {@intCast(u8, rr) })[0..]});
                     if (rr == '(') {
                         _ = self.read();
                         var args = self.parseCommaSeparatedMessageChains();
@@ -411,18 +440,22 @@ pub const IokeParser = struct {
         std.log.err("file TODO:{}:{}:{}", .{ line, char, msg });
     }
 
-    fn parseCommaSeparatedMessageChains(self: *Self) *ArrayList(*IokeObject) {
-        var chain: ArrayList(*IokeObject) = ArrayList(*IokeObject).init(self.allocator);
+    fn parseCommaSeparatedMessageChains(self: *Self) *ArrayList(*IokeData) {
+        const chain = self.allocator.create(ArrayList(*IokeData)) catch unreachable;
+        chain.* = ArrayList(*IokeData).init(self.allocator);
         // return chain;
 
         var curr: ?*IokeObject = parseMessageChain(self);
         while (curr != null) {
-            chain.append(curr.?) catch unreachable;
+            var currAsData = self.allocator.create(IokeData) catch unreachable;
+            currAsData.* = IokeData{.IokeObject = curr};
+            chain.append(currAsData) catch unreachable;
             self.readWhiteSpace();
             var rr: i64 = self.peek();
             if (rr == ',') {
                 _ = self.read();
                 curr = self.parseMessageChain();
+                // std.log.info("CURR: {}\n", .{ curr });
                 if (curr == null) {
                     var buf: [100]u8 = undefined;
                     var fbs = std.io.fixedBufferStream(&buf);
@@ -433,22 +466,23 @@ pub const IokeParser = struct {
                 }
             } else {
                 if (curr != null and curr.?.data.Message.?.isTerminator and curr.?.data.Message.?.next == null) {
+                    std.log.info("Ordered Remove\n", .{});
                     _ = chain.orderedRemove(chain.items.len - 1);
                 }
                 curr = null;
             }
         }
-        return &chain;
+        return chain;
     }
 
     fn isUnary(self: *Self, name: []const u8) bool {
         if (self.unaryOperators.?.contains(name) and
-            (self.top.?.*.head == null or
-            self.top.?.*.last != null and self.top.?.last.?.data.Message.?.isTerminator))
-        {
-            return true;
+                (self.top.?.*.head == null or
+                     self.top.?.*.last != null and self.top.?.last.?.data.Message.?.isTerminator))
+            {
+                return true;
         } else {
-            return false;
+                return false;
         }
     }
 
@@ -502,7 +536,7 @@ pub const IokeParser = struct {
 
     fn parseEmptyMessageSend(self: *Self) void {
         const l: u32 = self.lineNumber;
-        const cc: u32 = self.currentCharacter - 1;
+        const cc: u32 = if (self.currentCharacter == 0) self.currentCharacter else self.currentCharacter - 1;
         var args = self.parseCommaSeparatedMessageChains();
         self.parseCharacter(')');
 
@@ -515,12 +549,12 @@ pub const IokeParser = struct {
         m.setPosition(cc);
         var mx = self.runtime.createMessage(m);
         mx.data.Message.?.setArguments(args);
-        self.top.?.*.add(mx);
+        self.top.?.add(mx);
     }
 
     fn parseOpenCloseMessageSend(self: *Self, end: i64, name: []const u8) void {
         const l: u32 = self.lineNumber;
-        const cc: u32 = self.currentCharacter - 1;
+        const cc: u32 = if (self.currentCharacter == 0) self.currentCharacter else self.currentCharacter - 1;
 
         const rr: i64 = self.peek();
         const r2: i64 = self.peek2();
@@ -546,12 +580,12 @@ pub const IokeParser = struct {
             self.parseCharacter(end);
             mx.data.Message.?.setArguments(args);
         }
-        self.top.?.*.add(mx);
+        self.top.?.add(mx);
     }
 
     pub fn parseRegularMessageSend(self: *Self, indicator: i64) void {
         const l: u32 = self.lineNumber;
-        const cc: u32 = self.currentCharacter - 1;
+        const cc: u32 = if (self.currentCharacter == 0) self.currentCharacter else self.currentCharacter - 1;
 
         var buf: [256]u8 = undefined;
         var fbs = std.io.fixedBufferStream(&buf);
@@ -562,15 +596,15 @@ pub const IokeParser = struct {
         rr = self.peek();
 
         while (self.isLetter(rr) or
-            self.isIDDigit(rr) or
-            rr == ':' or
-            rr == '!' or
-            rr == '?' or
-            rr == '$')
-        {
-            _ = self.read();
-            std.fmt.format(writer, "{}", .{rr}) catch unreachable;
-            rr = self.peek();
+                   self.isIDDigit(rr) or
+                   rr == ':' or
+                   rr == '!' or
+                   rr == '?' or
+                   rr == '$')
+            {
+                _ = self.read();
+                std.fmt.format(writer, "{}", .{rr}) catch unreachable;
+                rr = self.peek();
         }
         var m = self.allocator.create(Message) catch unreachable;
         m.* = Message{
@@ -588,51 +622,403 @@ pub const IokeParser = struct {
             self.parseCharacter(')');
             // mx.data should always be there after createMessage!
             mx.data.Message.?.setArguments(args);
-            self.top.?.*.add(mx);
+            self.top.?.add(mx);
         } else {
-            // FINISH
             self.possibleOperator(mx);
         }
     }
 
-    pub fn parseMessage(self: *Self) bool {
+    fn parseText(self: *Self, indicator: usize) void {
+        var string = IokeString.init(self.allocator);
+        var isDoubleQuote = indicator == '"';
+
+        const l: u32 = self.lineNumber;
+        const cc: u32 = if (self.currentCharacter == 0) self.currentCharacter else self.currentCharacter - 1;
+
+        if(!isDoubleQuote) {
+            _ = self.read();
+        }
         while (true) {
             var rr = self.peek();
 
             if (rr == -1) {
                 _ = self.read();
-                return false;
+                return;
             }
 
             switch (rr) {
-                ',', ')', ']', '}' => return false,
-                '(' => {
+                '"' => {
                     _ = self.read();
-                    self.parseEmptyMessageSend();
-                    return true;
-                },
-                '[' => {
-                    self.parseOpenCloseMessageSend(']', "[]"[0..]);
-                    return true;
-                },
-                '{' => {
-                    self.parseOpenCloseMessageSend('}', "{}"[0..]);
-                    return true;
-                },
-                '+', '-', '*', '%', '<', '>', '!', '?', '~', '&', '|', '^', '$', '=', '@', '\'', '`', '/' => {
-                    _ = self.read();
-                    self.parseOperatorChars(rr);
-                    return true;
+                    // var msg = Message(runtime, );
+                    var m = self.allocator.create(Message) catch unreachable;
+                    m.* = Message{
+                        .runtime = self.runtime,
+                        .name = "internal:createText"[0..],
+                        .line = l,
+                        .position = cc,
+                    };
+                    var mm = self.runtime.createMessage(m);
+
+                    if(isDoubleQuote) {
+                        self.top.?.add(mm);
+                        return;
+                    }
+                    rr = self.peek();
+
+                    var argAsData = self.allocator.create(IokeData) catch unreachable;
+                    argAsData.* = IokeData{.Internal = string};
+                    mm.data.Message.?.appendArgument(argAsData);
                 },
                 else => {
-                    _ = self.read();
-                    self.parseRegularMessageSend(rr);
+                    var thisSlice = self.iterator.nextCodepointSlice();
+                    if (thisSlice == null) {
+                        return;
+                    } else {
+                        string.appendBytes(thisSlice.?);
+                        _ = self.read();
+                        rr = self.peek();
+                    }
+                }
 
-                    return true;
-                },
             }
+        }
+
+    }
+
+    fn parseNumber(self: *Self, indicator: i64) void {
+        const l: u32 = self.lineNumber;
+        const cc: u32 = if (self.currentCharacter == 0) self.currentCharacter else self.currentCharacter - 1;
+        var string = IokeString.init(self.allocator);
+        // var string_writer = string.writer();
+        var thisSlice = self.iterator.nextCodepointSlice();
+        if (thisSlice != null) {
+            string.appendBytes(thisSlice.?);
+        }
+        var decimal = false;
+
+        var rr: i64 = -1;
+        if (indicator == '0') {
+            rr = self.peek();
+            if (rr == 'x' or rr == 'X') {
+                _ = self.read();
+                thisSlice = self.iterator.nextCodepointSlice();
+                if (thisSlice != null) {
+                    string.appendBytes(thisSlice.?);
+                }
+                rr = self.peek();
+                if((rr >= '0' and rr <= '9') or
+                       (rr >= 'a' and rr <= 'f') or
+                       (rr >= 'A' and rr <= 'F')) {
+                    _ = self.read();
+                    thisSlice = self.iterator.nextCodepointSlice();
+                    if (thisSlice != null) {
+                        string.appendBytes(thisSlice.?);
+                    }
+                    rr = self.peek();
+                    while((rr >= '0' and rr <= '9') or
+                              (rr >= 'a' and rr <= 'f') or
+                              (rr >= 'A' and rr <= 'F')) {
+                        _ = self.read();
+                        thisSlice = self.iterator.nextCodepointSlice();
+                        if (thisSlice != null) {
+                            string.appendBytes(thisSlice.?);
+                        }
+                        rr = self.peek();
+                    }
+                } else {
+                    std.log.err("Expected at least one hexadecimal characters in hexadecimal number literal - got: {}\n", .{ self.charDesc(rr) });
+                }
+            } else {
+                var r2 = self.peek2();
+                if(rr == '.' and (r2 >= '0' and r2 <= '9')) {
+                    decimal = true;
+                    string.appendBytes(([_]u8 {@intCast(u8, rr), @intCast(u8, r2)})[0..]);
+                    _ = self.read();
+                    _ = self.read();
+                    rr = self.peek();
+                    while(rr >= '0' and rr <= '9') {
+                        _ = self.read();
+                        string.appendBytes(([_]u8 {@intCast(u8, rr)})[0..]);
+                        rr = self.peek();
+                    }
+                    if(rr == 'e' or rr == 'E') {
+                        _ = self.read();
+                        string.appendBytes(([_]u8 {@intCast(u8, rr)})[0..]);
+                        rr = self.peek();
+                        if(rr == '-' or rr == '+') {
+                            _ = self.read();
+                            string.appendBytes(([_]u8 {@intCast(u8, rr)})[0..]);
+                            rr = self.peek();
+                        }
+
+                        if(rr >= '0' and rr <= '9') {
+                            _ = self.read();
+                            string.appendBytes(([_]u8 {@intCast(u8, rr)})[0..]);
+                            rr = self.peek();
+                            while(rr >= '0' and rr <= '9') {
+                                _ = self.read();
+                                string.appendBytes(([_]u8 {@intCast(u8, rr)})[0..]);
+                            }
+                        } else {
+                            std.log.err("Expected at least one decimal character following exponent specifier in number literal - got: {}\n", .{ self.charDesc(rr) });
+                        }
+                    }
+                }
+            }
+        } else {
+            rr = self.peek();
+            while(rr >= '0' and rr <= '9') {
+                _ = self.read();
+                string.appendBytes(([_]u8 {@intCast(u8, rr)})[0..]);
+                rr = self.peek();
+            }
+            var r2 = self.peek2();
+            if(rr == '.' and r2 >= '0' and r2 <= '9') {
+                decimal = true;
+                string.appendBytes(([_]u8 {@intCast(u8, rr), @intCast(u8, r2)})[0..]);
+                _ = self.read();
+                _ = self.read();
+                rr = self.peek();
+
+                while(rr >= '0' and rr <= '9') {
+                    _ = self.read();
+                    string.appendBytes(([_]u8 {@intCast(u8, rr)})[0..]);
+                    rr = self.peek();
+                }
+                if(rr == 'e' or rr == 'E') {
+                    _ = self.read();
+                    string.appendBytes(([_]u8 {@intCast(u8, rr)})[0..]);
+                    rr = self.peek();
+                    if(rr == '-' or rr == '+') {
+                        _ = self.read();
+                        string.appendBytes(([_]u8 {@intCast(u8, rr)})[0..]);
+                        rr = self.peek();
+                    }
+
+                    if(rr >= '0' and rr <= '9') {
+                        _ = self.read();
+                        string.appendBytes(([_]u8 {@intCast(u8, rr)})[0..]);
+                        rr = self.peek();
+                        while(rr >= '0' and rr <= '9') {
+                            _ = self.read();
+                            string.appendBytes(([_]u8 {@intCast(u8, rr)})[0..]);
+                        }
+                    } else {
+                        std.log.err("Expected at least one decimal character following exponent specifier in number literal - got: {}\n", .{ self.charDesc(rr) });
+                    }
+                }
+            } else if(rr == 'e' or rr == 'E') {
+                _ = self.read();
+                string.appendBytes(([_]u8 {@intCast(u8, rr)})[0..]);
+                rr = self.peek();
+                if(rr  == '-' or rr == '+') {
+                    _ = self.read();
+                    string.appendBytes(([_]u8 {@intCast(u8, rr)})[0..]);
+                    rr = self.peek();
+                }
+
+                if(rr >= '0' and rr <= '9') {
+                    _ = self.read();
+                    string.appendBytes(([_]u8 {@intCast(u8, rr)})[0..]);
+                    rr = self.peek();
+                    while(rr >= '0' and rr <= '9') {
+                        _ = self.read();
+                        string.appendBytes(([_]u8 {@intCast(u8, rr)})[0..]);
+                    }
+                } else {
+                    std.log.err("Expected at least one decimal character following exponent specifier in number literal - got: {}\n", .{ self.charDesc(rr) });
+                }
+            }
+        }
+
+        // TODO: add unit specifier here
+        var m = self.allocator.create(Message) catch unreachable;
+        m.* = Message{
+            .runtime = self.runtime,
+            .name = if (decimal) "internal:createDecimal"[0..] else "internal:createNumber"[0..],
+        };
+        m.setLine(l);
+        m.setPosition(cc);
+        var mx = self.runtime.createMessage(m);
+        var argAsData = self.allocator.create(IokeData) catch unreachable;
+        argAsData.* = IokeData{.Internal = string};
+        mx.data.Message.?.appendArgument(argAsData);
+        self.top.?.add(mx);
+    }
+
+    pub fn parseMessage(self: *Self) bool {
+
+        var rr = self.peek();
+
+        if (rr < 0) {
+            _ = self.read();
             return false;
         }
+
+        // std.log.info("allbymyself {} \n", .{([_]u8 {@intCast(u8, rr) })[0..]});
+
+        switch (rr) {
+            ',', ')', ']', '}' => return false,
+            '(' => {
+                _ = self.read();
+                self.parseEmptyMessageSend();
+                return true;
+            },
+            '[' => {
+                self.parseOpenCloseMessageSend(']', "[]"[0..]);
+                return true;
+            },
+            '{' => {
+                self.parseOpenCloseMessageSend('}', "{}"[0..]);
+                return true;
+            },
+            '"' => {
+                _ = self.read();
+                self.parseText('"');
+                return true;
+            },
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' => {
+                _ = self.read();
+                self.parseNumber(rr);
+                return true;
+            },
+            '.' => {
+                _ = self.read();
+                var rr_ = self.peek();
+                if (rr_ == '.') {
+                    self.parseRange();
+                } else {
+                    self.parseTerminator('.');
+                }
+            },
+            '\r', '\n' => {
+                _ = self.read();
+                self.parseTerminator(rr);
+                return true;
+            },
+            '+', '-', '*', '%',
+            '<', '>', '!', '?',
+            '~', '&', '|', '^',
+            '$', '=', '@', '\'',
+            '`', '/' => {
+                _ = self.read();
+                self.parseOperatorChars(rr);
+                return true;
+
+            },
+            ':' => {
+                _ = self.read();
+                var rr_ = self.peek();
+                if (self.isLetter(rr_) or self.isIDDigit(rr_)) {
+                    self.parseRegularMessageSend(':');
+                } else {
+                    self.parseOperatorChars(':');
+                }
+                return true;
+            },
+            else => {
+                _ = self.read();
+                if (self.isWhiteSpace(rr)) {
+                    self.readWhiteSpace();
+                } else {
+                    self.parseRegularMessageSend(rr);
+                }
+                return true;
+            },
+        }
+        return false;
+    }
+
+    fn parseRange(self: *Self) void {
+        const l: u32 = self.lineNumber;
+        const cc: u32 = if (self.currentCharacter == 0) self.currentCharacter else self.currentCharacter - 1;
+        var count:usize = 2;
+        _ = self.read();
+        var rr = self.peek();
+        while (rr == '.') {
+            count += 1;
+            _ = self.read();
+            rr = self.peek();
+        }
+        var result = IokeString.init(self.allocator);
+        if(count < 13) {
+            result.appendBytes(RANGES[count]);
+        } else {
+            // StringBuilder sb = new StringBuilder();
+            var i: usize = 0;
+            while(i < count) {
+                result.appendBytes("."[0..]);
+                // sb.append('.');
+            }
+            // result = sb.toString();
+        }
+
+        var m = self.allocator.create(Message) catch unreachable;
+        var resultStr = result.getBytes() catch unreachable;
+        m.* = Message{
+            .runtime = self.runtime,
+            .name = resultStr,
+            .line = l,
+            .position = cc,
+        };
+        var mx = self.runtime.createMessage(m);
+
+        if (rr == '(') {
+            _ = self.read();
+            var args = self.parseCommaSeparatedMessageChains();
+            self.parseCharacter(')');
+            mx.data.Message.?.setArguments(args);
+            self.top.?.add(mx);
+        } else {
+            self.possibleOperator(mx);
+        }
+    }
+
+    fn parseTerminator(self: *Self, indicator: i64) void  {
+        const l: u32 = self.lineNumber;
+        const cc: u32 = if (self.currentCharacter == 0) self.currentCharacter else self.currentCharacter - 1;
+        var rr_: ?i64 = null;
+        // var rr2_: ?i32 = null;
+
+        if (indicator == '\r') {
+            rr_ = self.peek();
+            if(rr_.? == '\n') {
+                _ = self.read();
+            }
+        }
+        var rr = if (rr_ != null) rr_.? else self.peek();
+        var rr2 = self.peek2();
+
+        while(true) {
+            if((rr == '.' and rr2 != '.') or (rr == '\n')) {
+                _ = self.read();
+            } else if(rr == '\r' and rr2 == '\n') {
+                _ = self.read();
+                _ = self.read();
+            } else {
+                break;
+            }
+            rr = self.peek();
+            rr2 = self.peek2();
+        }
+
+        if (self.top != null and (
+            self.top.?.last != null or
+                (self.top.?.currentLevel != null and self.top.?.currentLevel.?.operatorMessage != null)
+        )) {
+            self.top.?.popOperatorsTo(999999);
+        }
+
+        var m = self.allocator.create(Message) catch unreachable;
+        m.* = Message{
+            .runtime = self.runtime,
+            .name = ".",
+            .line = l,
+            .position = cc,
+            .isTerminator = true,
+        };
+        var mx = self.runtime.createMessage(m);
+        self.top.?.add(mx);
     }
 };
 

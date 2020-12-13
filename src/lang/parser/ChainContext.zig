@@ -3,6 +3,7 @@ const Allocator = std.mem.Allocator;
 const BufferedChain = @import("./BufferedChain.zig").BufferedChain;
 const Level = @import("./Level.zig").Level;
 const Message = @import("../Message.zig").Message;
+const IokeData = @import("../IokeData.zig").IokeData;
 const IokeDataHelpers = @import("../IokeData.zig").IokeDataHelpers;
 const IokeObject = @import("../IokeObject.zig").IokeObject;
 
@@ -17,6 +18,7 @@ pub const ChainContext = struct {
 
     pub fn init(self: *Self) void {
         var bufferedChain = self.allocator.create(BufferedChain) catch unreachable;
+        bufferedChain.init(self.allocator);
         bufferedChain.* = BufferedChain{};
         self.chains = bufferedChain;
         var currLevel = self.allocator.create(Level) catch unreachable;
@@ -36,21 +38,38 @@ pub const ChainContext = struct {
             msg.data.Message.?.setNext(msg);
             self.last = msg;
         }
-        if (self.currentLevel.?.type == Level.Type.UNARY) {
-            // TODO
-            // self.currentLevel.operatorMessage.add(self.pop());
-            // currentLevel = currentLevel.parent;
+        if (self.currentLevel != null and self.currentLevel.?.type == Level.Type.UNARY) {
+            // std.log.info("\n DANGER DANGER \n", .{});
+            var poppedVal = self.pop();
+            if (poppedVal != null) {
+                var argAsData = self.allocator.create(IokeData) catch unreachable;
+                argAsData.* = IokeData{.IokeObject = poppedVal};
+                self.currentLevel.?.operatorMessage.?.getArguments().?.append(argAsData) catch unreachable;
+            }
+            self.currentLevel = self.currentLevel.?.parent;
         }
     }
 
     pub fn push(self: *Self, precedence: i32, op: *IokeObject, levelType: Level.Type) void {
+        if (self.currentLevel == null) {
+            std.log.info("\n internal-fatal: chain context was uninitialized\n", .{});
+            return;
+        }
         std.log.info("\n head-3 {*}\n", .{op.runtime});
-        self.currentLevel.?.type = levelType;
-        self.currentLevel.?.precedence = precedence;
-        self.currentLevel.?.parent = self.currentLevel;
-        self.currentLevel.?.operatorMessage = op;
+        var currLevel = self.allocator.create(Level) catch unreachable;
+        currLevel.* = Level{
+            .type = levelType,
+            .precedence = precedence,
+            .parent = self.currentLevel,
+            .operatorMessage = op,
+        };
+        self.currentLevel = currLevel;
+        // self.currentLevel.?.type = levelType;
+        // self.currentLevel.?.precedence = precedence;
+        // self.currentLevel.?.parent = self.currentLevel;
+        // self.currentLevel.?.operatorMessage = op;
         // = Level{
-            //     .type = levelType,
+        //     .type = levelType,
         //     .precedence = precedence,
         //     .parent = &self.currentLevel,
         //     .operatorMessage = op,
@@ -67,31 +86,50 @@ pub const ChainContext = struct {
 
     pub fn pop(self: *Self) ?*IokeObject {
         if (self.head != null) {
-            const headMessage = IokeDataHelpers.getMessage(self.head.?.data);
-            if (headMessage != null and headMessage.?.isTerminator and headMessage.?.next != null) {
-                headMessage.?.setPrev(self.head);
-                return self.pop();
+            var headMessage = IokeDataHelpers.getMessage(self.head.?.data);
+            while (headMessage != null and headMessage.?.isTerminator and headMessage.?.next != null) {
+                // head = Message.next(head);
+                // Message.setPrev(head, null);
+                self.head = headMessage.?.next;
+                headMessage.?.setPrev(null);
+                if (self.head != null) {
+                    headMessage = IokeDataHelpers.getMessage(self.head.?.data);
+                }
             }
         }
 
+        // if (self.head != null) {
+        //     if () {
+        //         self.head = headMessage.?.next;
+        //         headMessage.?.setPrev(self.head);
+        //         return pop(self);
+        //     }
+        // }
+
+
+        // const headToReturn = self.allocator.create(IokeObject) catch unreachable;
+        // if (self.head != null) {
+        //     headToReturn.* = self.head.?.*;
+        // }
         const headToReturn = self.head;
 
-        if (headToReturn != null) {
-            headToReturn.?.runtime.* = self.head.?.runtime.*;
-            std.log.info("\n head-1 {*}\n", .{headToReturn.?.runtime});
-            std.log.info("\n head-2 {*}\n", .{self.head.?.runtime});
-        }
+        self.head = self.chains.?.head;
+        self.last = self.chains.?.last;
+        self.chains = self.chains.?.parent;
 
-        self.head = if (self.chains.?.head != null) self.chains.?.head.? else null;
-        self.last = if (self.chains.?.last != null) self.chains.?.last.? else null;
-        if (self.chains.?.parent != null) {
-            self.chains = self.chains.?.parent;
-        }
+        // if (self.chains.?.parent != null) {}
+
         return headToReturn;
     }
 
     pub fn popOperatorsTo(self: *Self, precedence: i32) void {
-        if ((self.currentLevel.?.precedence != -1 or self.currentLevel.?.type == Level.Type.UNARY) and self.currentLevel.?.precedence <= precedence) {
+        if (self.currentLevel == null) {
+            std.log.info("\n internal-fatal: chain context was uninitialized\n", .{});
+            return;
+        }
+
+        while ((self.currentLevel.?.precedence != -1 or self.currentLevel.?.type == Level.Type.UNARY) and self.currentLevel.?.precedence <= precedence) {
+            std.log.info("popping operators to {}\n", .{precedence});
             const arg = self.pop();
             if (arg == null) {
                 std.log.err("ChainContext.popOperatorsTo failed\n", .{});
@@ -117,13 +155,25 @@ pub const ChainContext = struct {
                     std.log.err("ChainContext.popOperatorsTo failed: missing link\n", .{});
                     return;
                 }
-                opMsgPrev.?.*.setNext(null);
-                if (self.head != null) {
-                    opMsgPrev.?.appendArgument(self.head.?);
-                }
+                opMsgPrev.?.setNext(null);
                 self.head = arg_;
+                if (self.head != null) {
+                    // opMsgPrev.?.appendArgument(self.head.?);
+                    var headMsg = IokeDataHelpers.getMessage(self.head.?.data);
+                    headMsg.?.setNextOfLast(op);
+                }
+                self.last = op;
+
+            } else {
+                if (arg_ != null) {
+                    var argAsData = self.allocator.create(IokeData) catch unreachable;
+                    argAsData.* = IokeData{.IokeObject = arg_};
+                    opMessage.?.getArguments().?.append(argAsData) catch unreachable;
+                }
             }
-            self.popOperatorsTo(precedence);
+
+            self.currentLevel = self.currentLevel.?.parent;
+            // self.popOperatorsTo(precedence);
         }
     }
 };

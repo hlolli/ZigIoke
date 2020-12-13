@@ -1,7 +1,5 @@
 const IokeObject = @import("../IokeObject.zig").IokeObject;
 
-// const Level
-
 pub const Level = struct {
     const Self = @This();
     pub const Type = enum {

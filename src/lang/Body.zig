@@ -51,25 +51,24 @@ pub const Body = struct {
     fn createCell(self: *Self, name: []const u8) *Cell {
         if (self.count == 0) {
             self.cells = AutoHashMap([]const u8, *Cell).init(self.allocator);
-            // self.cells = &newCells;
         }
 
-        var newCell: Cell = Cell{ .name = name };
+        var newCell = self.allocator.create(Cell) catch unreachable;
+        newCell.* = Cell{ .name = name };
 
         self.count += 1;
 
         if (self.lastAdded != null) {
-            // TODO segfault fix
-            // self.lastAdded.?.*.orderedNext = &newCell;
+            self.lastAdded.?.*.orderedNext = newCell;
         }
 
         if (self.firstAdded == null) {
-            self.firstAdded = &newCell;
+            self.firstAdded = newCell;
         }
 
-        self.lastAdded = &newCell;
+        self.lastAdded = newCell;
 
         // addKnownAbsentCell(cellsLocalRef, newCell, insertPos);
-        return &newCell;
+        return newCell;
     }
 };

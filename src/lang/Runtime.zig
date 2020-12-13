@@ -12,6 +12,7 @@ const IokeObject = @import("./IokeObject.zig").IokeObject;
 const LexicalContext = @import("./LexicalContext.zig").LexicalContext;
 const Body = @import("./Body.zig").Body;
 const Message = @import("./Message.zig").Message;
+const Number = @import("./Number.zig").Number;
 const Symbol = @import("./Symbol.zig").Symbol;
 const Text = @import("./Text.zig").Text;
 
@@ -29,7 +30,6 @@ pub const Runtime = struct {
     symbolTable: ?AutoHashMap([]const u8, *IokeObject) = null,
 
     allocator: *Allocator,
-    interpreter: *Interpreter,
 
     none: ?*IokeData = null,
     nul: ?*IokeObject = null,
@@ -47,6 +47,8 @@ pub const Runtime = struct {
     text: ?*IokeObject = null,
     symbol: ?*IokeObject = null,
     number: ?*IokeObject = null,
+    real: ?*IokeObject = null,
+    rational: ?*IokeObject = null,
     method: ?*IokeObject = null,
     defaultMethod: ?*IokeObject = null,
     nativeMethod: ?*IokeObject = null,
@@ -198,29 +200,56 @@ pub const Runtime = struct {
     }
 
     pub fn evaluateStream(self: *Self, reader: StringIterator, message: *IokeObject, context: *IokeObject) *IokeObject {
+        // var parsedObj = self.allocator.create(IokeObject) catch unreachable;
         var parsedObj = self.parseStream(reader, message, context);
+        // parsedObj = res;
+
+
         // defer parsedObj.deinit();
-        return self.interpreter.evaluate(parsedObj, self.ground.?, self.ground.?, null);
+        // std.log.info("\n parsedObj {*}\n", .{parsedObj});
+        return Interpreter.evaluate(parsedObj, self.ground.?, self.ground.?);
     }
 
     pub fn getSymbol(self: *Self, name_: []const u8) *IokeObject {
         var maybeSymbol = self.symbolTable.?.get(name_);
         if (maybeSymbol == null) {
-            var _symbolObj = Symbol{ .text = name_ };
-            var _symbolData = IokeData{ .Symbol = &_symbolObj };
-            var _symbolBody = Body{ .allocator = self.allocator };
-            var _newSymbol = IokeObject{
-                .body = &_symbolBody,
+            var _symbolObj = self.allocator.create(Symbol) catch unreachable;
+            _symbolObj.* = Symbol{ .text = name_ };
+            var _symbolData = self.allocator.create(IokeData) catch unreachable;
+            _symbolData.* = IokeData{ .Symbol = _symbolObj };
+            var _symbolBody = self.allocator.create(Body) catch unreachable;
+            _symbolBody.* = Body{ .allocator = self.allocator };
+            var _newSymbol = self.allocator.create(IokeObject) catch unreachable;
+            _newSymbol.* = IokeObject{
+                .body = _symbolBody,
                 .runtime = self,
-                .data = &_symbolData,
+                .data = _symbolData,
             };
-            maybeSymbol = &_newSymbol;
+            maybeSymbol = _newSymbol;
             maybeSymbol.?.singleMimicsWithoutCheck(self.symbol.?);
             self.symbolTable.?.put(name_, maybeSymbol.?) catch unreachable;
         }
         return maybeSymbol.?;
     }
 
+    pub fn errorCondition(self: *Self, cond: *IokeObject) void {
+        Interpreter.send1(self.errorMessage.?, self.ground.?, self.ground.?, self.createMessage(Message.wrap1(cond)));
+    }
+
+    pub fn newNumber(self: *Self, initVal: ?[]const u8) *IokeObject {
+        var _number = Number.init(self.allocator, null);
+        var _numberData = self.allocator.create(IokeData) catch unreachable;
+        _numberData.* = IokeData{ .Number = _number };
+        var _numberBody = self.allocator.create(Body) catch unreachable;
+        _numberBody.* = Body{ .allocator = self.allocator };
+        var _newNumber = self.allocator.create(IokeObject) catch unreachable;
+        _newNumber.* = IokeObject{
+            .body = _numberBody,
+            .runtime = self,
+            .data = _numberData,
+        };
+        return _newNumber;
+    }
     pub fn deinit(self: *Self) void {
         if (self.symbolTable != null) {
             self.symbolTable.?.deinit();
@@ -599,6 +628,25 @@ pub const Runtime = struct {
         self.lexicalContext = _newLexicalContext;
         // self.lexicalContext.?.init();
 
+        self.number = self.newNumber(null);
+        self.number.?.setKind("Number"[0..]);
+        self.number.?.documentation = "Represents an exact number"[0..];
+        // TODO mimic the comparator mixin
+        // self.number.mimic();
+        self.real = self.newNumber(null);
+        self.real.?.mimicsWithoutCheck(self.number.?);
+        self.real.?.setKind("Number Real"[0..]);
+        self.real.?.documentation = "A real number can be either a rational number or a decimal number"[0..];
+        var _numberRealData = self.allocator.create(IokeData) catch unreachable;
+        _numberRealData.* = IokeData{ .IokeObject = self.real };
+        self.number.?.registerCell("Real"[0..], _numberRealData);
+        self.rational = self.newNumber(null);
+        self.rational.?.setKind("Number Rational"[0..]);
+
+
+
+
+
         std.log.info("runtime init: setting kinds\n", .{});
         // setKind can be called now
         var nilKindStr = "nil"[0..];
@@ -607,7 +655,38 @@ pub const Runtime = struct {
         _falseObj.setKind("false"[0..]);
 
         // MESSAGES
+        self.asText = self.newMessage("asText"[0..]);
+        self.asRational = self.newMessage("asRational"[0..]);
+        self.asDecimal = self.newMessage("asDecimal"[0..]);
+        self.asSymbol = self.newMessage("asSymbol"[0..]);
+        self.asTuple = self.newMessage("asTuple"[0..]);
+        self.mimic = self.newMessage("mimic"[0..]);
+        self.spaceShip = self.newMessage("spaceShip"[0..]);
+        self.succ = self.newMessage("succ"[0..]);
+        self.pred = self.newMessage("pred"[0..]);
+        self.setValue = self.newMessage("setValue"[0..]);
+        self.nilMessage = self.newMessage("nilMessage"[0..]);
+        self.name = self.newMessage("name"[0..]);
+        self.callMessage = self.newMessage("callMessage"[0..]);
+        self.closeMessage = self.newMessage("closeMessage"[0..]);
+        self.code = self.newMessage("code"[0..]);
+        self.each = self.newMessage("each"[0..]);
+        self.textMessage = self.newMessage("textMessage"[0..]);
+        self.conditionsMessage = self.newMessage("conditions"[0..]);
+        self.handlerMessage = self.newMessage("handler"[0..]);
+        self.reportMessage = self.newMessage("report"[0..]);
+        self.printMessage = self.newMessage("print"[0..]);
+        self.printlnMessage = self.newMessage("println"[0..]);
+        self.outMessage = self.newMessage("out"[0..]);
+        self.currentDebuggerMessage = self.newMessage("currentDebugger"[0..]);
+        self.invokeMessage = self.newMessage("invoke"[0..]);
+        self.errorMessage = self.newMessage("error!"[0..]);
+        self.ErrorMessage = self.newMessage("Error"[0..]);
+
+        // TODO finish this
         self.isApplicableMessage = self.newMessage("applicable?"[0..]);
+
+
         std.log.info("self message null end of init\n", .{});
         return self;
     }

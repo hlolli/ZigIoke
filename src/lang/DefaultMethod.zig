@@ -1,5 +1,6 @@
 const std = @import("std");
 const Cell = @import("./Cell.zig");
+const Interpreter = @import("./Interpreter.zig").Interpreter;
 const IokeObject = @import("./IokeObject.zig").IokeObject;
 const IokeData = @import("./IokeData.zig").IokeData;
 const IokeDataType = @import("./IokeData.zig").IokeDataType;
@@ -19,6 +20,7 @@ pub const DefaultMethod = struct {
     // receiver, context, message, on
     // @static
     pub fn activateFixed(receiver: *IokeObject, context: *IokeObject, message: *IokeObject, on: *IokeObject) ?*IokeObject {
+        std.log.info("activating \n", .{});
         if (IokeDataHelpers.getDefaultMethod(receiver.data) == null) {
             // TODO THROW ERROR
             std.log.err("TODO throw error on NonActivable\n", .{});
@@ -37,6 +39,6 @@ pub const DefaultMethod = struct {
         // c.setCellFromObject("super", createSuperCallFor(self, context, message, on, dm.name));
         // dm.arguments.assignArgumentValues(c, context, message, on);
 
-        return context.runtime.interpreter.evaluate(dm.code, c, on, c);
+        return Interpreter.evaluate(dm.code, c, c);
     }
 };

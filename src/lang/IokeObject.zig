@@ -62,13 +62,18 @@ pub const IokeObject = struct {
                 "ModifyOnFrozen",
             };
             var maybe_cell_chain = self.runtime.condition.?.getCellChain(message, context, &names);
-            var condition__ = if (maybe_cell_chain != null) IokeDataHelpers.as(maybe_cell_chain.?, context) else null;
-            if (condition__ != null) {
-                var condition = condition__.?.mimic(message, context);
-                condition.setCellFromObject("message"[0..], message);
-                condition.setCellFromObject("context"[0..], context);
-                condition.setCellFromObject("receiver"[0..], self);
-                condition.setCellFromObject("modification"[0..], context.runtime.getSymbol(modification));
+            // var condition__ = if (maybe_cell_chain != null) IokeDataHelpers.as(maybe_cell_chain.?, context) else null;
+            if (maybe_cell_chain != null) {
+                var cond_obj = IokeDataHelpers.getObject(maybe_cell_chain.?);
+                if (cond_obj != null) {
+                    var condition =  cond_obj.?.mimic(message, context);
+                    condition.setCellFromObject("message"[0..], message);
+                    condition.setCellFromObject("context"[0..], context);
+                    condition.setCellFromObject("receiver"[0..], self);
+                    condition.setCellFromObject("modification"[0..], context.runtime.getSymbol(modification));
+                } else {
+                    std.log.err("internal: Possibly fatal error, cellChain data isn't of IokeObject type", .{});
+                }
             }
             // TODO!
             // context.runtime.errorCondition(condition);
@@ -98,7 +103,7 @@ pub const IokeObject = struct {
 
     pub fn parseMessage(self: *Self) bool {}
 
-    pub fn getArguments(self: *Self) ?*ArrayList(*IokeObject) {
+    pub fn getArguments(self: *Self) ?*ArrayList(*IokeData) {
         var maybeMessage = IokeDataHelpers.getMessage(self.data);
         if (maybeMessage != null) {
             var maybeArgz = maybeMessage.?.getArguments();
@@ -118,37 +123,66 @@ pub const IokeObject = struct {
     }
 
     pub fn allocateCopy(self: *Self, msg: ?*IokeObject, context: ?*IokeObject) *IokeObject {
-
         // std.log.info("allbymyself {*} \n", .{self.runtime.allocator});
-        var _newBody = Body{ .allocator = self.runtime.allocator };
+        var _newBody = self.runtime.allocator.create(Body) catch unreachable;
+        _newBody.* = Body{ .allocator = self.runtime.allocator };
         var copiedMsg = if (IokeDataHelpers.isMessage(self.data))
             Message.cloneData(self.data.Message, self)
-        else
+            else
             Message.cloneData(null, self);
 
-        var copied = IokeObject{
-            .body = &_newBody,
+        var copied = self.runtime.allocator.create(IokeObject) catch unreachable;
+        copied.* = IokeObject{
+            .body = _newBody,
             .runtime = self.runtime,
             .data = copiedMsg,
         };
-        return &copied;
+        return copied;
     }
+
+    fn containsMimic(self: *Self, obj: *IokeObject) bool {
+        if (self.body.mimicCount == 1) {
+            return obj == self.body.mimic;
+        }
+        if (self.body.mimic != null) {
+            return self.body.mimic == obj;
+        } else if (self.body.mimics != null) {
+            var i: usize = 0;
+            while (i < self.body.mimicCount) {
+                if(self.body.mimics.?.items[i] == obj) {
+                    return true;
+                }
+                i += 1;
+            }
+        }
+        return false;
+    }
+
+    // TODO everything's missing here
+    fn addMimic(self: *Self, mimic_: *IokeObject) void {}
 
     fn transplantActivation(self: *Self, mimic_: *IokeObject) void {
         // _ = self.isSetActivatable();
-        _ = mimic_.isSetActivatable();
-        // if(!self.isSetActivatable() and mimic_.isSetActivatable()) {
-        //     self.setActivatable(mimic_.isActivatable());
-        // }
+        // _ = mimic_.isSetActivatable();
+        if(!self.isSetActivatable() and mimic_.isSetActivatable()) {
+            self.setActivatable(mimic_.isActivatable());
+        }
     }
 
     pub fn singleMimicsWithoutCheck(self: *Self, mimic_: *IokeObject) void {
         // std.log.info("self__{*}\n", .{self.body});
         // std.log.info("mimic__{}\n", .{self.body});
-        std.log.info("BODYFLAGS 22 {}\n", .{mimic_.body.flags});
+        // std.log.info("BODYFLAGS 22 {}\n", .{mimic_.body.flags});
         self.body.mimic = mimic_;
         self.body.mimicCount = 1;
         self.transplantActivation(mimic_);
+    }
+
+    pub fn mimicsWithoutCheck(self: *Self, mimic_: *IokeObject) void {
+        if(!self.containsMimic(mimic_)) {
+            self.addMimic(mimic_);
+            self.transplantActivation(mimic_);
+        }
     }
 
     pub fn singleMimics(self: *Self, message: *IokeObject, context: *IokeObject) void {
@@ -189,6 +223,10 @@ pub const IokeObject = struct {
             var ret = IokeData{ .IokeObject = self };
             return &ret;
         }
+    }
+
+    pub fn registerCell(self: *Self, name: []const u8, data: *IokeData) void {
+        self.body.put(name, data);
     }
 
     pub fn findCell(self: *Self, name: []const u8) ?*Cell {
